@@ -35,7 +35,7 @@ function json(data, status = 200) {
       "Content-Type": "application/json; charset=utf-8",
       // GitHub Pages のフロントから叩けるよう CORS を許可
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
     },
   });
@@ -104,12 +104,51 @@ async function handleHealth(env) {
   return json({ status: "ok", shrines: row ? row.n : 0 });
 }
 
+async function handleFeedback(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "invalid JSON body" }, 400);
+  }
+
+  // 最低限 shrine_id か issue_type のどちらかは必要
+  const shrineId = body.shrine_id ? String(body.shrine_id) : null;
+  const issueType = body.issue_type ? String(body.issue_type) : null;
+  if (!shrineId && !issueType) {
+    return json({ error: "shrine_id か issue_type が必要です" }, 400);
+  }
+
+  const shrineName = body.shrine_name != null ? String(body.shrine_name) : null;
+  const comment = body.comment != null ? String(body.comment).slice(0, 2000) : null;
+  const lat = typeof body.lat === "number" ? body.lat : null;
+  const lon = typeof body.lon === "number" ? body.lon : null;
+
+  const result = await env.DB.prepare(
+    "INSERT INTO feedback (shrine_id, shrine_name, issue_type, comment, lat, lon, created_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, datetime('now'))"
+  )
+    .bind(shrineId, shrineName, issueType, comment, lat, lon)
+    .run();
+
+  return json({ ok: true, id: result.meta ? result.meta.last_row_id : null }, 201);
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    // CORS プリフライト (204 はボディ不可なので空ボディで返す)
     if (request.method === "OPTIONS") {
-      return json({}, 204);
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type",
+          "Access-Control-Max-Age": "86400",
+        },
+      });
     }
 
     try {
@@ -119,7 +158,13 @@ export default {
       if (url.pathname === "/health") {
         return await handleHealth(env);
       }
-      return json({ error: "Not found", endpoints: ["/nearby", "/health"] }, 404);
+      if (url.pathname === "/feedback" && request.method === "POST") {
+        return await handleFeedback(request, env);
+      }
+      return json(
+        { error: "Not found", endpoints: ["/nearby", "/health", "POST /feedback"] },
+        404
+      );
     } catch (err) {
       return json({ error: "internal error", detail: String(err) }, 500);
     }

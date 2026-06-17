@@ -116,6 +116,26 @@ body {
   border: 2px solid var(--gold-bright);
 }
 
+/* ---------- データ整備中の注記 ---------- */
+.data-notice {
+  position: fixed;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  margin: 0;
+  max-width: 94%;
+  padding: 6px 12px;
+  background: rgba(193, 39, 45, 0.14);
+  border: 1px solid rgba(201, 164, 76, 0.5);
+  border-radius: 8px;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+  backdrop-filter: blur(4px);
+}
+
 /* ---------- ステータストースト ---------- */
 .toast {
   position: fixed;
@@ -215,6 +235,152 @@ body {
 .btn-done {
   background: linear-gradient(135deg, var(--gold), var(--gold-bright));
   color: #1a1408;
+}
+
+/* ポップアップ内: 情報修正リンク */
+.popup-fb-link {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-family: var(--font-jp);
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.popup-fb-link:active {
+  color: var(--gold-bright);
+}
+
+/* ============================================================
+   フィードバックモーダル
+   ============================================================ */
+.fb-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(3px);
+}
+.fb-overlay.show {
+  display: flex;
+}
+.fb-modal {
+  width: 100%;
+  max-width: 480px;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--bg-soft);
+  border: 1px solid var(--gold);
+  border-radius: 16px 16px 0 0;
+  padding: 18px 18px calc(18px + env(safe-area-inset-bottom));
+  box-shadow: var(--shadow);
+  animation: fb-rise 0.22s ease-out;
+}
+@media (min-width: 520px) {
+  .fb-overlay {
+    align-items: center;
+  }
+  .fb-modal {
+    border-radius: 16px;
+  }
+}
+@keyframes fb-rise {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+}
+.fb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.fb-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--gold-bright);
+}
+.fb-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.fb-target {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 14px;
+}
+.fb-label {
+  display: block;
+  font-size: 13px;
+  color: var(--gold);
+  margin: 12px 0 6px;
+}
+.fb-name,
+.fb-comment {
+  width: 100%;
+  padding: 10px 12px;
+  background: #0c0a08;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--font-jp);
+  font-size: 14px;
+}
+.fb-name:focus,
+.fb-comment:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+.fb-loc {
+  display: flex;
+  gap: 10px;
+}
+.fb-loc-btn {
+  flex: 1;
+  padding: 10px;
+  background: #0c0a08;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--font-jp);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.fb-loc-btn.active {
+  background: rgba(193, 39, 45, 0.25);
+  border-color: var(--vermilion-bright);
+  color: #fff;
+}
+.fb-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 4px;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+.fb-check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--vermilion);
+}
+.fb-submit {
+  margin-top: 18px;
 }
 
 /* ============================================================

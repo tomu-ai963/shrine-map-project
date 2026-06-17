@@ -128,6 +128,14 @@ function buildPopupContent(shrine) {
   });
 
   wrap.appendChild(btn);
+
+  // 情報修正フィードバックを開くリンク
+  const fb = document.createElement("button");
+  fb.className = "popup-fb-link";
+  fb.textContent = "✏️ 情報を修正する";
+  fb.addEventListener("click", () => openFeedbackForm(shrine));
+  wrap.appendChild(fb);
+
   return wrap;
 }
 
@@ -173,6 +181,148 @@ async function loadAround(lat, lon) {
   } catch (e) {
     toast("⚠️ 近傍APIに接続できません（wrangler dev / デプロイ先を確認）");
     console.error(e);
+  }
+}
+
+/* ---------- フィードバックフォーム ---------- */
+let fbEls = null; // モーダルのDOM参照(初回生成後キャッシュ)
+let fbShrine = null; // 対象の社寺
+let fbLocSeverity = ""; // 位置ズレの選択 "minor" | "major" | ""
+
+function buildFeedbackModal() {
+  const overlay = document.createElement("div");
+  overlay.className = "fb-overlay";
+  overlay.innerHTML = `
+    <div class="fb-modal" role="dialog" aria-modal="true">
+      <div class="fb-head">
+        <span class="fb-title">情報を修正する</span>
+        <button class="fb-close" aria-label="閉じる">×</button>
+      </div>
+      <div class="fb-target"></div>
+
+      <label class="fb-label">神社・寺院名のズレ</label>
+      <input type="text" class="fb-name" placeholder="正しい名前があれば入力" />
+
+      <label class="fb-label">位置のズレ</label>
+      <div class="fb-loc">
+        <button type="button" class="fb-loc-btn" data-sev="minor">少しズレてる</button>
+        <button type="button" class="fb-loc-btn" data-sev="major">大きくズレてる</button>
+      </div>
+
+      <label class="fb-check">
+        <input type="checkbox" class="fb-notexist" />
+        <span>この場所には存在しない</span>
+      </label>
+
+      <label class="fb-label">自由コメント</label>
+      <textarea class="fb-comment" rows="3" placeholder="お気づきの点をご自由に"></textarea>
+
+      <button class="btn btn-checkin fb-submit">送信する</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const els = {
+    overlay,
+    target: overlay.querySelector(".fb-target"),
+    name: overlay.querySelector(".fb-name"),
+    locBtns: overlay.querySelectorAll(".fb-loc-btn"),
+    notexist: overlay.querySelector(".fb-notexist"),
+    comment: overlay.querySelector(".fb-comment"),
+    submit: overlay.querySelector(".fb-submit"),
+    close: overlay.querySelector(".fb-close"),
+  };
+
+  els.close.addEventListener("click", closeFeedbackForm);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) closeFeedbackForm();
+  });
+  els.locBtns.forEach((b) => {
+    b.addEventListener("click", () => {
+      const sev = b.dataset.sev;
+      fbLocSeverity = fbLocSeverity === sev ? "" : sev; // トグル
+      els.locBtns.forEach((x) =>
+        x.classList.toggle("active", x.dataset.sev === fbLocSeverity)
+      );
+    });
+  });
+  els.submit.addEventListener("click", submitFeedback);
+
+  return els;
+}
+
+function openFeedbackForm(shrine) {
+  if (!fbEls) fbEls = buildFeedbackModal();
+  fbShrine = shrine;
+  fbLocSeverity = "";
+
+  // リセット
+  fbEls.name.value = "";
+  fbEls.comment.value = "";
+  fbEls.notexist.checked = false;
+  fbEls.locBtns.forEach((x) => x.classList.remove("active"));
+  fbEls.submit.disabled = false;
+  fbEls.submit.textContent = "送信する";
+
+  const typeLabel = shrine.type === "shrine" ? "神社" : "寺院";
+  fbEls.target.textContent = `対象: ${shrine.name}（${shrine.prefecture}・${typeLabel}）`;
+  fbEls.overlay.classList.add("show");
+}
+
+function closeFeedbackForm() {
+  if (fbEls) fbEls.overlay.classList.remove("show");
+  fbShrine = null;
+}
+
+async function submitFeedback() {
+  if (!fbShrine) return;
+
+  const nameFix = fbEls.name.value.trim();
+  const freeComment = fbEls.comment.value.trim();
+  const notExist = fbEls.notexist.checked;
+
+  // issue_type を組み立て
+  const issues = [];
+  if (nameFix) issues.push("name_mismatch");
+  if (fbLocSeverity === "minor") issues.push("location_minor");
+  if (fbLocSeverity === "major") issues.push("location_major");
+  if (notExist) issues.push("not_exist");
+
+  if (issues.length === 0 && !freeComment) {
+    toast("修正したい内容を入力してください");
+    return;
+  }
+
+  // comment に名前修正候補も含めて保存(スキーマを変えない)
+  const commentParts = [];
+  if (nameFix) commentParts.push(`正しい名前候補: ${nameFix}`);
+  if (freeComment) commentParts.push(freeComment);
+
+  const payload = {
+    shrine_id: fbShrine.id,
+    shrine_name: fbShrine.name,
+    issue_type: issues.join(",") || "comment_only",
+    comment: commentParts.join(" / ") || null,
+    lat: fbShrine.lat,
+    lon: fbShrine.lon,
+  };
+
+  fbEls.submit.disabled = true;
+  fbEls.submit.textContent = "送信中…";
+  try {
+    const res = await fetch(`${API_BASE}/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(`API ${res.status}`);
+    closeFeedbackForm();
+    toast("ありがとうございます！データ改善に役立てます");
+  } catch (e) {
+    console.error(e);
+    fbEls.submit.disabled = false;
+    fbEls.submit.textContent = "送信する";
+    toast("⚠️ 送信に失敗しました。時間をおいて再度お試しください");
   }
 }
 

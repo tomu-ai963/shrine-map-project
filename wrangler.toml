@@ -1,0 +1,10 @@
+name = "shrine-api"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+
+# D1 データベースのバインディング。
+# `wrangler d1 create shrines-db` 実行後に出力される database_id を下に貼り付ける。
+[[d1_databases]]
+binding = "DB"               # Worker 内で env.DB として参照
+database_name = "shrines-db"
+database_id = "4184641a-c8a8-4e07-8011-a2eb5177470b"

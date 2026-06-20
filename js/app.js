@@ -59,18 +59,19 @@ const map = new maplibregl.Map({
   style: {
     version: 8,
     sources: {
-      carto: {
+      osm: {
         type: "raster",
         tiles: [
-          "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-          "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-          "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+          "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+          "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+          "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
         ],
         tileSize: 256,
-        attribution: "© OpenStreetMap contributors © CARTO",
+        attribution:
+          '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       },
     },
-    layers: [{ id: "carto", type: "raster", source: "carto" }],
+    layers: [{ id: "osm", type: "raster", source: "osm" }],
   },
   center: [FALLBACK.lon, FALLBACK.lat],
   zoom: 14,

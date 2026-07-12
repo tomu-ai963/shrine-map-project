@@ -18,6 +18,7 @@ D1 へのインポート:
 """
 
 import argparse
+import re
 import sys
 import time
 
@@ -49,6 +50,10 @@ RELIGION_TO_TYPE = {
     "shinto": "shrine",
     "buddhist": "temple",
 }
+
+# name に HTML タグ片や制御文字を含むレコードは XSS の温床になるため除外する
+SUSPICIOUS_NAME_RE = re.compile(r"[<>\x00-\x1f\x7f]")
+MAX_NAME_LEN = 100  # 正常な社寺名としてあり得ない長さは除外
 
 DEFAULT_PER_PREFECTURE = 30  # 1県あたりの採用件数 (×47 ≒ 1410件)
 REQUEST_TIMEOUT = 90        # 1リクエストのタイムアウト(秒)
@@ -117,9 +122,11 @@ def notability_score(tags: dict) -> int:
 def element_to_record(el: dict, prefecture: str) -> dict | None:
     """Overpass の element 1件を出力レコードに変換する。除外対象なら None。"""
     tags = el.get("tags", {})
-    name = tags.get("name")
+    name = (tags.get("name") or "").strip()
     if not name:
         return None  # 名前なしは地図に出せないので除外
+    if len(name) > MAX_NAME_LEN or SUSPICIOUS_NAME_RE.search(name):
+        return None  # HTMLタグ片・制御文字・異常な長さの名前は除外(XSS対策)
 
     religion = tags.get("religion")
     rec_type = RELIGION_TO_TYPE.get(religion)

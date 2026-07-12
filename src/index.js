@@ -8,6 +8,7 @@
  *     - limit    : 最大件数 (任意, 既定 50, 最大 200)
  *     - type     : shrine | temple で絞り込み (任意)
  *   GET /health  : 稼働確認 (件数を返す)
+ *   POST /feedback : データ修正フィードバックの登録
  *
  * D1(SQLite)には空間インデックスが無いため、
  *   1) 緯度経度のバウンディングボックスで SQL 側を粗く絞り込み
@@ -17,6 +18,47 @@
 
 const EARTH_RADIUS_M = 6371000;
 const DEG_LAT_M = 111320; // 緯度1度あたりの距離[m](ほぼ一定)
+
+/* ---------- CORS ----------
+ * Allow-Origin はフロントエンド(GitHub Pages)に限定する。
+ * ローカル開発時のみ localhost / 127.0.0.1 の HTTP オリジンを許可する。
+ * (file:// 直開きは Origin が "null" になるため対象外。ローカル確認は
+ *  `python -m http.server` 等の簡易サーバー経由で行うこと)
+ */
+const FRONTEND_ORIGIN = "https://tomu-ai963.github.io";
+const LOCAL_DEV_ORIGIN_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+function corsHeaders(request) {
+  const origin = request.headers.get("Origin");
+  const allow =
+    origin && (origin === FRONTEND_ORIGIN || LOCAL_DEV_ORIGIN_RE.test(origin))
+      ? origin
+      : FRONTEND_ORIGIN;
+  return {
+    "Access-Control-Allow-Origin": allow,
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    Vary: "Origin",
+  };
+}
+
+/* ---------- /feedback のバリデーション設定 ---------- */
+// フロントエンド(app.js)が送る issue_type の許可リスト。カンマ区切りで複数指定可。
+const ALLOWED_ISSUE_TYPES = new Set([
+  "name_mismatch",
+  "location_minor",
+  "location_major",
+  "not_exist",
+  "comment_only",
+]);
+const MAX_SHRINE_ID_LEN = 64;
+const MAX_SHRINE_NAME_LEN = 200;
+const MAX_ISSUE_TYPE_LEN = 100;
+const MAX_COMMENT_LEN = 1000;
+
+// IPベースの簡易レート制限 (D1 に直近リクエスト時刻を記録)
+const RATE_LIMIT_MAX = 5; // ウィンドウ内の最大リクエスト数
+const RATE_LIMIT_WINDOW_S = 60; // ウィンドウ幅[秒]
 
 function haversine(lat1, lon1, lat2, lon2) {
   const toRad = (d) => (d * Math.PI) / 180;
@@ -28,24 +70,21 @@ function haversine(lat1, lon1, lat2, lon2) {
   return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(a));
 }
 
-function json(data, status = 200) {
+function json(data, status, cors) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      // GitHub Pages のフロントから叩けるよう CORS を許可
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      ...cors,
     },
   });
 }
 
-async function handleNearby(url, env) {
+async function handleNearby(url, env, cors) {
   const lat = parseFloat(url.searchParams.get("lat"));
   const lon = parseFloat(url.searchParams.get("lon"));
   if (Number.isNaN(lat) || Number.isNaN(lon)) {
-    return json({ error: "lat と lon は必須の数値です" }, 400);
+    return json({ error: "lat と lon は必須の数値です" }, 400, cors);
   }
 
   let radius = parseFloat(url.searchParams.get("radius")) || 3000;
@@ -89,40 +128,122 @@ async function handleNearby(url, env) {
   }
   withDist.sort((a, b) => a.distance_m - b.distance_m);
 
-  return json({
-    count: Math.min(withDist.length, limit),
-    radius_m: radius,
-    origin: { lat, lon },
-    results: withDist.slice(0, limit),
-  });
+  return json(
+    {
+      count: Math.min(withDist.length, limit),
+      radius_m: radius,
+      origin: { lat, lon },
+      results: withDist.slice(0, limit),
+    },
+    200,
+    cors
+  );
 }
 
-async function handleHealth(env) {
+async function handleHealth(env, cors) {
   const row = await env.DB.prepare(
     "SELECT COUNT(*) AS n FROM shrines"
   ).first();
-  return json({ status: "ok", shrines: row ? row.n : 0 });
+  return json({ status: "ok", shrines: row ? row.n : 0 }, 200, cors);
 }
 
-async function handleFeedback(request, env) {
+/**
+ * IPベースの簡易レート制限。
+ * feedback_rate_limit テーブルに (ip, unix秒) を記録し、
+ * 直近ウィンドウ内のリクエスト数が上限を超えていれば true を返す。
+ */
+async function isRateLimited(env, ip) {
+  const now = Math.floor(Date.now() / 1000);
+  const windowStart = now - RATE_LIMIT_WINDOW_S;
+
+  // 期限切れレコードの掃除(テーブルの肥大化防止)
+  await env.DB.prepare("DELETE FROM feedback_rate_limit WHERE ts < ?")
+    .bind(windowStart)
+    .run();
+
+  const row = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM feedback_rate_limit WHERE ip = ? AND ts >= ?"
+  )
+    .bind(ip, windowStart)
+    .first();
+  if (row && row.n >= RATE_LIMIT_MAX) return true;
+
+  await env.DB.prepare("INSERT INTO feedback_rate_limit (ip, ts) VALUES (?, ?)")
+    .bind(ip, now)
+    .run();
+  return false;
+}
+
+async function handleFeedback(request, env, cors) {
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  if (await isRateLimited(env, ip)) {
+    return json(
+      { error: "リクエストが多すぎます。しばらく待ってから再度お試しください" },
+      429,
+      cors
+    );
+  }
+
   let body;
   try {
     body = await request.json();
   } catch {
-    return json({ error: "invalid JSON body" }, 400);
+    return json({ error: "invalid JSON body" }, 400, cors);
   }
 
-  // 最低限 shrine_id か issue_type のどちらかは必要
-  const shrineId = body.shrine_id ? String(body.shrine_id) : null;
-  const issueType = body.issue_type ? String(body.issue_type) : null;
-  if (!shrineId && !issueType) {
-    return json({ error: "shrine_id か issue_type が必要です" }, 400);
+  // shrine_id: 必須。長さ上限を超えるものは拒否。
+  const shrineId =
+    typeof body.shrine_id === "string" || typeof body.shrine_id === "number"
+      ? String(body.shrine_id).trim()
+      : "";
+  if (!shrineId || shrineId.length > MAX_SHRINE_ID_LEN) {
+    return json({ error: "shrine_id が不正です" }, 400, cors);
   }
 
+  // issue_type: 必須。カンマ区切りの各値が許可リストに含まれること。
+  const issueType = typeof body.issue_type === "string" ? body.issue_type : "";
+  if (!issueType || issueType.length > MAX_ISSUE_TYPE_LEN) {
+    return json({ error: "issue_type が不正です" }, 400, cors);
+  }
+  const issueTokens = issueType.split(",");
+  if (issueTokens.some((t) => !ALLOWED_ISSUE_TYPES.has(t))) {
+    return json(
+      {
+        error: "issue_type に許可されていない値が含まれています",
+        allowed: [...ALLOWED_ISSUE_TYPES],
+      },
+      400,
+      cors
+    );
+  }
+
+  // 任意フィールド: 長さ上限を超えるものは拒否。
   const shrineName = body.shrine_name != null ? String(body.shrine_name) : null;
-  const comment = body.comment != null ? String(body.comment).slice(0, 2000) : null;
-  const lat = typeof body.lat === "number" ? body.lat : null;
-  const lon = typeof body.lon === "number" ? body.lon : null;
+  if (shrineName && shrineName.length > MAX_SHRINE_NAME_LEN) {
+    return json({ error: `shrine_name は${MAX_SHRINE_NAME_LEN}文字以内にしてください` }, 400, cors);
+  }
+  const comment = body.comment != null ? String(body.comment) : null;
+  if (comment && comment.length > MAX_COMMENT_LEN) {
+    return json({ error: `comment は${MAX_COMMENT_LEN}文字以内にしてください` }, 400, cors);
+  }
+
+  // 座標: 数値かつ妥当な範囲のみ受け付ける(それ以外は null)
+  const lat =
+    typeof body.lat === "number" && body.lat >= -90 && body.lat <= 90
+      ? body.lat
+      : null;
+  const lon =
+    typeof body.lon === "number" && body.lon >= -180 && body.lon <= 180
+      ? body.lon
+      : null;
+
+  // shrine_id が shrines テーブルに実在するか確認してから書き込む
+  const shrine = await env.DB.prepare("SELECT id FROM shrines WHERE id = ?")
+    .bind(shrineId)
+    .first();
+  if (!shrine) {
+    return json({ error: "存在しない shrine_id です" }, 400, cors);
+  }
 
   const result = await env.DB.prepare(
     "INSERT INTO feedback (shrine_id, shrine_name, issue_type, comment, lat, lon, created_at) " +
@@ -131,21 +252,24 @@ async function handleFeedback(request, env) {
     .bind(shrineId, shrineName, issueType, comment, lat, lon)
     .run();
 
-  return json({ ok: true, id: result.meta ? result.meta.last_row_id : null }, 201);
+  return json(
+    { ok: true, id: result.meta ? result.meta.last_row_id : null },
+    201,
+    cors
+  );
 }
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    const cors = corsHeaders(request);
 
     // CORS プリフライト (204 はボディ不可なので空ボディで返す)
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
         headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type",
+          ...cors,
           "Access-Control-Max-Age": "86400",
         },
       });
@@ -153,20 +277,21 @@ export default {
 
     try {
       if (url.pathname === "/nearby") {
-        return await handleNearby(url, env);
+        return await handleNearby(url, env, cors);
       }
       if (url.pathname === "/health") {
-        return await handleHealth(env);
+        return await handleHealth(env, cors);
       }
       if (url.pathname === "/feedback" && request.method === "POST") {
-        return await handleFeedback(request, env);
+        return await handleFeedback(request, env, cors);
       }
       return json(
         { error: "Not found", endpoints: ["/nearby", "/health", "POST /feedback"] },
-        404
+        404,
+        cors
       );
     } catch (err) {
-      return json({ error: "internal error", detail: String(err) }, 500);
+      return json({ error: "internal error", detail: String(err) }, 500, cors);
     }
   },
 };

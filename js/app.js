@@ -93,13 +93,21 @@ function buildPopupContent(shrine) {
   const typeLabel = shrine.type === "shrine" ? "神社" : "寺院";
   const near = shrine.distance_m <= CHECKIN_RADIUS;
 
-  wrap.innerHTML = `
-    <div class="ptype">${shrine.prefecture} ・ ${typeLabel}</div>
-    <div class="pname">${shrine.name}</div>
-    <div class="pdist ${near ? "near" : ""}">📍 約 ${shrine.distance_m} m ${
-    near ? "（境内エリア！）" : ""
-  }</div>
-  `;
+  // OSM由来の name / prefecture は信頼できないため textContent で埋め込む(XSS対策)
+  const ptype = document.createElement("div");
+  ptype.className = "ptype";
+  ptype.textContent = `${shrine.prefecture} ・ ${typeLabel}`;
+  wrap.appendChild(ptype);
+
+  const pname = document.createElement("div");
+  pname.className = "pname";
+  pname.textContent = shrine.name;
+  wrap.appendChild(pname);
+
+  const pdist = document.createElement("div");
+  pdist.className = "pdist" + (near ? " near" : "");
+  pdist.textContent = `📍 約 ${shrine.distance_m} m ${near ? "（境内エリア！）" : ""}`;
+  wrap.appendChild(pdist);
 
   const btn = document.createElement("button");
   btn.className = "btn";

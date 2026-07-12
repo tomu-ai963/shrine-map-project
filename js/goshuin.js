@@ -35,11 +35,25 @@ function render() {
     const card = document.createElement("div");
     card.className = "goshuin-card";
     card.setAttribute("data-seal", g.type === "shrine" ? "神社" : "寺院");
-    card.innerHTML = `
-      <div class="g-icon">${g.type === "shrine" ? "⛩️" : "🏯"}</div>
-      <div class="g-name">${g.name}</div>
-      <div class="g-meta">${g.prefecture || ""}<br />${g.date}</div>
-    `;
+
+    // OSM由来の name / prefecture は信頼できないため textContent で埋め込む(XSS対策)
+    const icon = document.createElement("div");
+    icon.className = "g-icon";
+    icon.textContent = g.type === "shrine" ? "⛩️" : "🏯";
+
+    const name = document.createElement("div");
+    name.className = "g-name";
+    name.textContent = g.name;
+
+    const meta = document.createElement("div");
+    meta.className = "g-meta";
+    meta.append(
+      document.createTextNode(g.prefecture || ""),
+      document.createElement("br"),
+      document.createTextNode(g.date || "")
+    );
+
+    card.append(icon, name, meta);
     grid.appendChild(card);
   });
 

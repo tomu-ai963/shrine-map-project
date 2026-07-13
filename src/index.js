@@ -112,6 +112,11 @@ async function handleNearby(url, env, cors) {
   if (Number.isNaN(lat) || Number.isNaN(lon)) {
     return json({ error: "lat と lon は必須の数値です" }, 400, cors);
   }
+  // 緯度経度の妥当な範囲外はバウンディングボックス計算に使わせない。
+  // (日本国内チェックは行わない — 世界中どこからでも読める公開APIとして維持)
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    return json({ error: "lat / lon が範囲外です (lat:-90〜90, lon:-180〜180)" }, 400, cors);
+  }
 
   let radius = parseFloat(url.searchParams.get("radius")) || 3000;
   radius = Math.min(Math.max(radius, 1), 50000);
@@ -141,8 +146,12 @@ async function handleNearby(url, env, cors) {
     sql += " AND type = ?";
     bind.push(type);
   }
-  // ボックス内候補に上限を設けて読み込み過多を防ぐ
-  sql += " LIMIT 1000";
+  // ボックス内候補に上限を設けて読み込み過多を防ぐ。
+  // LIMIT で切られる前に中心からの近似距離 (等距円筒近似の2乗距離) で
+  // 並べておき、上限超過時に近い社寺が漏れないようにする。
+  // 真の距離順ソートは JS 側の Haversine が引き続き担当する。
+  sql += " ORDER BY (lat - ?) * (lat - ?) + (lon - ?) * (lon - ?) * ? LIMIT 1000";
+  bind.push(lat, lat, lon, lon, cosLat * cosLat);
 
   const { results } = await env.DB.prepare(sql).bind(...bind).all();
 
@@ -262,15 +271,24 @@ async function handleFeedback(request, env, cors) {
     return json({ error: `comment は${MAX_COMMENT_LEN}文字以内にしてください` }, 400, cors);
   }
 
-  // 座標: 数値かつ妥当な範囲のみ受け付ける(それ以外は null)
-  const lat =
-    typeof body.lat === "number" && body.lat >= -90 && body.lat <= 90
-      ? body.lat
-      : null;
-  const lon =
-    typeof body.lon === "number" && body.lon >= -180 && body.lon <= 180
-      ? body.lon
-      : null;
+  // 座標は任意項目。未送信 (null/undefined) は null のまま保存するが、
+  // 送信された場合は数値かつ妥当な範囲を要求し、範囲外は 400 で拒否する
+  // (以前は範囲外を黙って null 保存していた)。
+  // 日本国内チェックは行わない — 世界中どこからでも投稿できる前提を維持。
+  let lat = null;
+  if (body.lat != null) {
+    if (typeof body.lat !== "number" || body.lat < -90 || body.lat > 90) {
+      return json({ error: "lat が範囲外です (-90〜90)" }, 400, cors);
+    }
+    lat = body.lat;
+  }
+  let lon = null;
+  if (body.lon != null) {
+    if (typeof body.lon !== "number" || body.lon < -180 || body.lon > 180) {
+      return json({ error: "lon が範囲外です (-180〜180)" }, 400, cors);
+    }
+    lon = body.lon;
+  }
 
   // shrine_id が shrines テーブルに実在するか確認してから書き込む
   const shrine = await env.DB.prepare("SELECT id FROM shrines WHERE id = ?")
@@ -500,7 +518,13 @@ async function handleGoshuinPost(request, env, cors) {
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  // checked_in_at 未指定時のデフォルト日付は JST 基準 (/checkin の
+  // date('now','+9 hours') と揃える)。ただし一括移行ではクライアントが
+  // 各記録の checked_in_at を明示的に送るのが通常で、このデフォルトが
+  // 使われるのは checked_in_at 欠落や不正形式のレコードに限られる。
+  const todayJst = new Date(Date.now() + 9 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
   const normalized = [];
   for (const r of records) {
     const shrineId =
@@ -513,7 +537,7 @@ async function handleGoshuinPost(request, env, cors) {
     const checkedInAt =
       typeof r.checked_in_at === "string" && CHECKED_IN_AT_RE.test(r.checked_in_at)
         ? r.checked_in_at
-        : today;
+        : todayJst;
     normalized.push({ shrineId, checkedInAt });
   }
 
@@ -639,7 +663,13 @@ export default {
 
       return await route.handler(request, url, env, cors);
     } catch (err) {
-      return json({ error: "internal error", detail: String(err) }, 500, cors);
+      // 詳細はサーバー側ログ (wrangler tail / Workers Logs) にのみ出力し、
+      // クライアントへは漏らさない (D1エラーやスタックの内部情報を含むため)
+      console.error(
+        `internal error: ${request.method} ${url.pathname}`,
+        err && err.stack ? err.stack : String(err)
+      );
+      return json({ error: "internal error" }, 500, cors);
     }
   },
 };

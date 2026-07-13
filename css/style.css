@@ -160,6 +160,24 @@ body {
   opacity: 1;
 }
 
+/* ---------- オフラインバナー ---------- */
+#offline-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  padding: 6px 12px;
+  background: rgba(120, 60, 20, 0.95);
+  color: #fff;
+  font-size: 12px;
+  text-align: center;
+  display: none;
+}
+#offline-banner.show {
+  display: block;
+}
+
 /* ---------- 現在地の再取得ボタン ---------- */
 #locate-btn {
   position: fixed;

@@ -71,4 +71,7 @@ async function init() {
   render(list, synced ? "" : "⚠️ オフライン表示中 (サーバーと未同期)");
 }
 
+// オンライン復帰したら未同期分をサーバーへ送り、最新状態で描き直す
+window.addEventListener("online", init);
+
 init();

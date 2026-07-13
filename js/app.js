@@ -109,6 +109,11 @@ const map = new maplibregl.Map({
   },
   center: [FALLBACK.lon, FALLBACK.lat],
   zoom: 14,
+  // モバイルのピンチズームは地図領域内で有効 (MapLibre 既定値だが明示)。
+  // ページ全体のズームは index.html の viewport (user-scalable=no) で
+  // 意図的に止めており、地図操作とは競合しない。
+  touchZoomRotate: true,
+  doubleClickZoom: true,
 });
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
 
@@ -174,7 +179,7 @@ function buildPopupContent(shrine) {
     if (result.ok) {
       toast(
         result.offline
-          ? `🎉 ${shrine.name} の御朱印を授かりました（オフライン: 後で同期します）`
+          ? `🎉 ${shrine.name} の御朱印を授かりました（オフラインのため端末に保存。オンライン復帰後に自動で同期されます）`
           : `🎉 ${shrine.name} の御朱印を授かりました！`
       );
     } else {
@@ -345,6 +350,12 @@ function closeFeedbackForm() {
 async function submitFeedback() {
   if (!fbShrine) return;
 
+  // フィードバックにはローカル保存の救済がないため、オフラインでは送信しない
+  if (navigator.onLine === false) {
+    toast("📡 オフラインです。接続を確認してから再度お試しください");
+    return;
+  }
+
   const nameFix = fbEls.name.value.trim();
   const freeComment = fbEls.comment.value.trim();
   const notExist = fbEls.notexist.checked;
@@ -429,6 +440,17 @@ async function relocate() {
   }
 }
 locateBtn.addEventListener("click", relocate);
+
+/* ---------- オンライン/オフライン状態の案内 ----------
+ * 常設バナーは offline-banner.js が担当。ここでは地図ページ固有の案内
+ * (タイル読み込み・同期) をトーストで補足する。 */
+window.addEventListener("offline", () => {
+  toast("📡 オフラインのため新しい地図タイルや周辺検索が読み込めません（表示済みの地図は閲覧できます）");
+});
+window.addEventListener("online", () => {
+  toast("📶 オンラインに復帰しました。未同期の御朱印を同期しています…");
+  GoshuinStore.sync(); // オフライン中にローカル保存したチェックインを再送
+});
 
 /* ---------- 地図移動後の周辺再検索 ---------- */
 map.on("moveend", () => {

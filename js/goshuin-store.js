@@ -126,6 +126,13 @@ window.GoshuinStore = (() => {
   //     一括移行アップロードで再送する ok:true, offline:true
   async function checkin(shrine, pos) {
     if (has(shrine.id)) return { ok: false, error: "取得済みです" };
+    // オフラインが明確なら無駄なリクエストをせず即ローカル保存へ
+    // (境内での電波不良を想定した救済。オンライン復帰後の sync() で
+    //  一括移行アップロードとしてサーバーへ再送される)
+    if (navigator.onLine === false) {
+      saveRecordLocal(shrine);
+      return { ok: true, offline: true };
+    }
     try {
       const res = await fetch(`${API_BASE}/checkin`, {
         method: "POST",

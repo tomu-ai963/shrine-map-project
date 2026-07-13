@@ -2,14 +2,21 @@
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
+    <!-- user-scalable=no / maximum-scale=1.0 は意図的:
+         ページ全体のピンチズームを止め、地図操作との競合 (誤ってUIごと拡大) を防ぐ。
+         地図自体のピンチズームは MapLibre が地図領域内で処理する (app.js の touchZoomRotate)。 -->
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <title>⛩️ デジタル御朱印帳</title>
+    <!-- SRIハッシュは npm レジストリ公式 tarball (maplibre-gl@4.7.1) の
+         dist ファイルから算出 (sha384)。バージョン更新時は再計算すること。 -->
     <link
       href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
       rel="stylesheet"
+      integrity="sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V"
+      crossorigin="anonymous"
     />
     <link rel="stylesheet" href="css/style.css" />
   </head>
@@ -25,7 +32,12 @@
     </p>
     <div id="toast" class="toast"></div>
 
-    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <script
+      src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"
+      integrity="sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj"
+      crossorigin="anonymous"
+    ></script>
+    <script src="js/offline-banner.js"></script>
     <script src="js/goshuin-store.js"></script>
     <script src="js/app.js"></script>
   </body>

@@ -1,0 +1,24 @@
+-- shrines テーブルに論理削除用の is_active カラムを追加するマイグレーション。
+-- 再インポート (fetch_shrines.py の UPSERT 形式SQL) を適用する前に1回だけ実行する。
+--
+-- 適用手順:
+--   ローカル: wrangler d1 execute shrines-db --local  --file migrate_shrines_is_active.sql
+--   本番    : wrangler d1 execute shrines-db --remote --file migrate_shrines_is_active.sql
+--   ※ 2回実行すると "duplicate column name" エラーになる (データは壊れない)
+--   ※ 本番 Worker のデプロイ (is_active フィルタ付き /nearby) はこの適用後に行うこと
+--
+-- 検証手順 (適用前後で shrine_id が変わらないこと・参照が壊れないことの確認):
+--   1. 適用前に件数と id サンプルを控える:
+--        SELECT COUNT(*) FROM shrines;
+--        SELECT id FROM shrines ORDER BY id LIMIT 10;
+--   2. 適用後に同じクエリを実行し、件数・id が一致することを確認する
+--      (ALTER TABLE ADD COLUMN は行の追加・削除・並び替えを行わない)
+--   3. 全件が is_active=1 になっていることを確認する:
+--        SELECT COUNT(*) FROM shrines WHERE is_active = 1;  -- 1と一致するはず
+--   4. ユーザーデータの参照が全件解決できることを確認する (0 になるはず):
+--        SELECT COUNT(*) FROM goshuin_collection g
+--          LEFT JOIN shrines s ON s.id = g.shrine_id WHERE s.id IS NULL;
+--        SELECT COUNT(*) FROM feedback f
+--          LEFT JOIN shrines s ON s.id = f.shrine_id WHERE s.id IS NULL;
+
+ALTER TABLE shrines ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;

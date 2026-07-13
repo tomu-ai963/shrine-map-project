@@ -4,7 +4,15 @@ fetch_shrines.py
 Overpass API から全国(まずは関東圏)の神社・寺院を取得し、
 Cloudflare D1 にインポートできる SQL ファイル(shrines.sql)を出力するバッチ。
 
-出力カラム: id, name, lat, lon, prefecture, type(shrine/temple)
+出力カラム: id, name, lat, lon, prefecture, type(shrine/temple), is_active
+
+id は OSM element の type + id 由来 (例: n123456, w789, r42) の安定キーで、
+再インポートしても変わらない。goshuin_collection / feedback が shrine_id と
+して参照しているため、この採番規則を変更してはならない。
+
+再インポートは DROP TABLE ではなく UPSERT (INSERT ... ON CONFLICT(id) DO UPDATE)
+で行い、今回の取得結果に含まれなくなった社寺は is_active=0 の論理削除にする。
+これによりユーザーデータ (御朱印・フィードバック) の参照先レコードは消えない。
 
 著名度の代理スコア(wikidata/wikipedia/heritage 等のタグ)で県ごとに上位を採用する。
 
@@ -12,9 +20,11 @@ Cloudflare D1 にインポートできる SQL ファイル(shrines.sql)を出力
     python fetch_shrines.py                # 全国47都道府県・各30件 (約1410件)
     python fetch_shrines.py --per 50       # 1県あたりの件数を変更
     python fetch_shrines.py --out jp.sql
+    python fetch_shrines.py --force        # 前回比の件数減少ガードを無視
 
 D1 へのインポート:
     wrangler d1 execute <DB_NAME> --file=shrines.sql
+    (既存DBに is_active カラムが無い場合は先に migrate_shrines_is_active.sql を適用)
 """
 
 import argparse
@@ -162,31 +172,46 @@ def sql_escape(value: str) -> str:
     return value.replace("'", "''")
 
 
-def write_sql(records: list, out_path: str) -> None:
-    """レコード一覧を D1 取り込み用の SQL ファイルに書き出す。"""
+def write_sql(records: list, out_path: str, fetched_prefs: list) -> None:
+    """レコード一覧を D1 取り込み用の UPSERT SQL ファイルに書き出す。
+
+    - DROP TABLE は使わない。既存レコードは id (OSM由来の安定キー) で更新し、
+      goshuin_collection / feedback からの shrine_id 参照を壊さない。
+    - fetched_prefs (取得に成功した都道府県) について、今回の結果に含まれない
+      レコードを is_active=0 の論理削除にする。取得に失敗した県は触らない
+      (通信失敗で県全体を誤って論理削除しないための安全策)。
+    """
     batch_size = 200  # 複数行 INSERT をまとめる単位
+    by_pref = {}
+    for r in records:
+        by_pref.setdefault(r["prefecture"], []).append(r)
+
     with open(out_path, "w", encoding="utf-8") as f:
-        f.write("DROP TABLE IF EXISTS shrines;\n")
+        # 先頭行の record_count は次回実行時の件数減少ガードが読み取る
+        f.write(f"-- record_count: {len(records)}\n")
+        f.write("-- fetch_shrines.py が生成した UPSERT 形式のインポートSQL。\n")
+        f.write("-- 既存テーブルを DROP せず、含まれない社寺は is_active=0 で論理削除する。\n\n")
         f.write(
-            "CREATE TABLE shrines (\n"
+            "CREATE TABLE IF NOT EXISTS shrines (\n"
             "  id TEXT PRIMARY KEY,\n"
             "  name TEXT NOT NULL,\n"
             "  lat REAL NOT NULL,\n"
             "  lon REAL NOT NULL,\n"
             "  prefecture TEXT,\n"
-            "  type TEXT\n"
+            "  type TEXT,\n"
+            "  is_active INTEGER NOT NULL DEFAULT 1\n"
             ");\n\n"
         )
 
         for start in range(0, len(records), batch_size):
             chunk = records[start:start + batch_size]
             f.write(
-                "INSERT INTO shrines (id,name,lat,lon,prefecture,type) VALUES\n"
+                "INSERT INTO shrines (id,name,lat,lon,prefecture,type,is_active) VALUES\n"
             )
             rows = []
             for r in chunk:
                 rows.append(
-                    "('{id}','{name}',{lat},{lon},'{pref}','{type}')".format(
+                    "('{id}','{name}',{lat},{lon},'{pref}','{type}',1)".format(
                         id=sql_escape(r["id"]),
                         name=sql_escape(r["name"]),
                         lat=r["lat"],
@@ -196,7 +221,38 @@ def write_sql(records: list, out_path: str) -> None:
                     )
                 )
             f.write(",\n".join(rows))
-            f.write(";\n\n")
+            f.write(
+                "\nON CONFLICT(id) DO UPDATE SET\n"
+                "  name = excluded.name,\n"
+                "  lat = excluded.lat,\n"
+                "  lon = excluded.lon,\n"
+                "  prefecture = excluded.prefecture,\n"
+                "  type = excluded.type,\n"
+                "  is_active = 1;\n\n"
+            )
+
+        # 論理削除: 取得に成功した県のうち、今回の結果に含まれないレコードを無効化
+        f.write("-- OSM側で見つからなくなった社寺の論理削除 (取得成功県のみ対象)\n")
+        for pref in fetched_prefs:
+            pref_records = by_pref.get(pref, [])
+            if not pref_records:
+                # 取得は成功したが採用0件 → 全件論理削除は危険なのでスキップ
+                continue
+            ids = ",".join(f"'{sql_escape(r['id'])}'" for r in pref_records)
+            f.write(
+                f"UPDATE shrines SET is_active = 0 "
+                f"WHERE prefecture = '{sql_escape(pref)}' AND id NOT IN ({ids});\n"
+            )
+
+
+def read_prev_record_count(path: str) -> int | None:
+    """前回出力した SQL ファイルの先頭コメントから件数を読み取る (無ければ None)。"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            m = re.match(r"-- record_count: (\d+)", f.readline())
+            return int(m.group(1)) if m else None
+    except OSError:
+        return None
 
 
 def main() -> None:
@@ -219,17 +275,28 @@ def main() -> None:
         default="",
         help="取得対象の都道府県をカンマ区切りで指定 (省略時は全国47)",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="前回出力より件数が大きく減っていても確認なしで出力する",
+    )
     args = parser.parse_args()
 
     targets = [p.strip() for p in args.prefs.split(",") if p.strip()] or PREFECTURES
 
     records = []
     seen_ids = set()
+    fetched_prefs = []  # 取得に成功した県 (論理削除の対象範囲)
 
     for pref in targets:
         print(f"[取得中] {pref} ...")
         elements = fetch_prefecture(pref)
         print(f"  -> {len(elements)} 件の素データを受信")
+        if elements:
+            fetched_prefs.append(pref)
+        else:
+            # 取得失敗県を論理削除の対象にすると県全体が消えるため除外する
+            print(f"  ! {pref} は取得失敗のため論理削除の対象から除外します", file=sys.stderr)
 
         # 県内候補を整形・重複除去してから著名度スコアで上位 N 件を採用
         candidates = []
@@ -260,7 +327,19 @@ def main() -> None:
         print("有効なデータが取得できませんでした。", file=sys.stderr)
         sys.exit(1)
 
-    write_sql(records, args.out)
+    # 件数減少ガード: 前回出力の90%を下回る場合は誤って大量に論理削除
+    # してしまう恐れがあるため、--force なしでは出力しない
+    prev_count = read_prev_record_count(args.out)
+    if prev_count and len(records) < prev_count * 0.9 and not args.force:
+        print(
+            f"!! 中止: 取得件数 {len(records)} 件が前回 ({prev_count} 件) の90%を下回っています。\n"
+            f"   Overpass の取得失敗などで意図せず大量の社寺が論理削除される恐れがあります。\n"
+            f"   この件数で問題なければ --force を付けて再実行してください。",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    write_sql(records, args.out, fetched_prefs)
 
     # 内訳サマリ
     n_shrine = sum(1 for r in records if r["type"] == "shrine")

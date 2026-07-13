@@ -1,20 +1,14 @@
 /* ============================================================
-   goshuin.js — 御朱印帳ページ (localStorage の一覧表示)
+   goshuin.js — 御朱印帳ページ (サーバー同期 + localStorage フォールバック)
+
+   表示手順:
+     1) localStorage のキャッシュを即時表示
+     2) GoshuinStore.sync() でローカル→サーバー移行 + サーバーから取得
+     3) マージ結果で再描画 (オフライン時はローカルのまま)
    ============================================================ */
 
-const GOSHUIN_KEY = "goshuin_collection";
-
-function loadGoshuin() {
-  try {
-    return JSON.parse(localStorage.getItem(GOSHUIN_KEY)) || [];
-  } catch {
-    return [];
-  }
-}
-
-function render() {
+function render(list, notice) {
   const root = document.getElementById("goshuin-list");
-  const list = loadGoshuin();
 
   if (list.length === 0) {
     root.innerHTML = `
@@ -26,7 +20,7 @@ function render() {
   }
 
   // 新しい順
-  list.reverse();
+  list = [...list].reverse();
 
   const grid = document.createElement("div");
   grid.className = "goshuin-grid";
@@ -59,6 +53,22 @@ function render() {
 
   root.innerHTML = "";
   root.appendChild(grid);
+
+  if (notice) {
+    const note = document.createElement("p");
+    note.className = "goshuin-notice";
+    note.textContent = notice;
+    root.appendChild(note);
+  }
 }
 
-render();
+async function init() {
+  // 1) キャッシュを即時表示
+  render(GoshuinStore.loadLocal());
+
+  // 2) サーバー同期 → 3) マージ結果で再描画
+  const { list, synced } = await GoshuinStore.sync();
+  render(list, synced ? "" : "⚠️ オフライン表示中 (サーバーと未同期)");
+}
+
+init();

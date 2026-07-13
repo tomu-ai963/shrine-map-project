@@ -16,32 +16,66 @@ const SEARCH_LIMIT = 100; // 取得上限
 const CHECKIN_RADIUS = 100; // チェックイン可能距離[m]
 const FALLBACK = { lat: 35.681, lon: 139.767 }; // GPS不可時のフォールバック(東京駅)
 
-const GOSHUIN_KEY = "goshuin_collection";
+const ACCURACY_WARN_M = 50; // GPS精度がこれより悪ければ警告を表示
+const POS_MAX_AGE_MS = 2 * 60 * 1000; // 位置情報の鮮度: 2分超は再取得してからチェックイン
+const RESEARCH_MIN_MOVE_M = 2000; // 地図移動でこの距離以上ズレたら周辺を再検索
 
-/* ---------- 御朱印ストレージ ---------- */
-function loadGoshuin() {
-  try {
-    return JSON.parse(localStorage.getItem(GOSHUIN_KEY)) || [];
-  } catch {
-    return [];
+/* ---------- 御朱印ストレージ (goshuin-store.js に委譲) ---------- */
+function hasGoshuin(id) {
+  return GoshuinStore.has(id);
+}
+
+// 最後に取得した現在地 (POST /checkin のサーバー側距離検証に送る)
+// { lat, lon, accuracy, ts } — ts は取得時刻で、鮮度判定に使う
+let mePos = null;
+
+/* ---------- GPS取得 ---------- */
+function getPosition(maximumAge = 0) {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("geolocation unsupported"));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) =>
+        resolve({
+          lat: pos.coords.latitude,
+          lon: pos.coords.longitude,
+          accuracy: pos.coords.accuracy != null ? pos.coords.accuracy : null,
+          ts: Date.now(),
+        }),
+      reject,
+      { enableHighAccuracy: true, timeout: 8000, maximumAge }
+    );
+  });
+}
+
+// 取得した位置を反映し、精度が悪ければ警告する
+function applyPosition(pos, fly) {
+  mePos = pos;
+  setMe(pos.lat, pos.lon);
+  if (fly) map.flyTo({ center: [pos.lon, pos.lat], zoom: 15 });
+  if (pos.accuracy != null && pos.accuracy > ACCURACY_WARN_M) {
+    toast(`⚠️ 位置精度が低い可能性があります（±${Math.round(pos.accuracy)}m）`);
   }
 }
-function hasGoshuin(id) {
-  return loadGoshuin().some((g) => g.id === id);
+
+// チェックイン用: 位置が未取得または古い (2分超) 場合は再取得してから返す
+async function getFreshPosition() {
+  if (mePos && Date.now() - mePos.ts <= POS_MAX_AGE_MS) return mePos;
+  try {
+    const pos = await getPosition();
+    applyPosition(pos, false);
+    return pos;
+  } catch {
+    return mePos; // 再取得失敗時は古い位置のまま (サーバー側判定に委ねる)
+  }
 }
-function addGoshuin(shrine) {
-  const list = loadGoshuin();
-  if (list.some((g) => g.id === shrine.id)) return false;
-  list.push({
-    id: shrine.id,
-    name: shrine.name,
-    prefecture: shrine.prefecture,
-    type: shrine.type,
-    date: new Date().toISOString().slice(0, 10),
-  });
-  localStorage.setItem(GOSHUIN_KEY, JSON.stringify(list));
-  return true;
-}
+
+// 起動時にサーバーと同期 (localStorage 消去後の復元・未送信分の再送)。
+// 同期完了で「取得済み」判定が変わりうるが、ポップアップは開くたびに
+// 再生成されるため表示は自然に追従する。
+GoshuinStore.sync();
 
 /* ---------- トースト ---------- */
 let toastTimer;
@@ -129,11 +163,24 @@ function buildPopupContent(shrine) {
   }
   render();
 
-  btn.addEventListener("click", () => {
-    if (addGoshuin(shrine)) {
-      toast(`🎉 ${shrine.name} の御朱印を授かりました！`);
-      render();
+  // 正式なチェックイン判定はサーバー (POST /checkin) が距離検証込みで行う。
+  // ボタンの活性化 (near 判定) はあくまでUI用の即時フィードバック。
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    btn.textContent = "確認中…";
+    // 位置情報が古ければ再取得してから送る (鮮度対策)
+    const pos = await getFreshPosition();
+    const result = await GoshuinStore.checkin(shrine, pos);
+    if (result.ok) {
+      toast(
+        result.offline
+          ? `🎉 ${shrine.name} の御朱印を授かりました（オフライン: 後で同期します）`
+          : `🎉 ${shrine.name} の御朱印を授かりました！`
+      );
+    } else {
+      toast(`⚠️ ${result.error}`);
     }
+    render();
   });
 
   wrap.appendChild(btn);
@@ -178,7 +225,10 @@ async function fetchNearby(lat, lon) {
   return data.results || [];
 }
 
+let lastSearch = null; // 最後に周辺検索した中心 (moveend 再検索の判定用)
+
 async function loadAround(lat, lon) {
+  lastSearch = { lat, lon };
   try {
     const shrines = await fetchNearby(lat, lon);
     renderShrines(shrines);
@@ -191,6 +241,15 @@ async function loadAround(lat, lon) {
     toast("⚠️ 近傍APIに接続できません（wrangler dev / デプロイ先を確認）");
     console.error(e);
   }
+}
+
+// クライアント側の距離計算 (moveend 再検索の判定用。チェックイン判定はサーバー側)
+function distanceM(lat1, lon1, lat2, lon2) {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const a =
+    Math.sin(toRad(lat2 - lat1) / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(toRad(lon2 - lon1) / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.sqrt(a));
 }
 
 /* ---------- フィードバックフォーム ---------- */
@@ -344,24 +403,60 @@ function setMe(lat, lon) {
   meMarker = new maplibregl.Marker({ element: el }).setLngLat([lon, lat]).addTo(map);
 }
 
+/* ---------- 現在地の再取得ボタン ---------- */
+const locateBtn = document.createElement("button");
+locateBtn.id = "locate-btn";
+locateBtn.type = "button";
+document.body.appendChild(locateBtn);
+
+function setLocating(loading) {
+  locateBtn.disabled = loading;
+  locateBtn.textContent = loading ? "📡 現在地を取得中…" : "📍 現在地を再取得";
+}
+setLocating(false);
+
+async function relocate() {
+  setLocating(true);
+  try {
+    const pos = await getPosition(); // maximumAge=0: キャッシュを使わず取り直す
+    applyPosition(pos, true);
+    loadAround(pos.lat, pos.lon);
+  } catch (e) {
+    toast("⚠️ 現在地を取得できませんでした（位置情報の許可を確認してください）");
+    console.error(e);
+  } finally {
+    setLocating(false);
+  }
+}
+locateBtn.addEventListener("click", relocate);
+
+/* ---------- 地図移動後の周辺再検索 ---------- */
+map.on("moveend", () => {
+  if (!lastSearch) return;
+  const c = map.getCenter();
+  if (distanceM(c.lat, c.lng, lastSearch.lat, lastSearch.lon) > RESEARCH_MIN_MOVE_M) {
+    loadAround(c.lat, c.lng);
+  }
+});
+
 /* ---------- 起動: GPS取得 → 地図中心 + 近傍読込 ---------- */
-function start(lat, lon, isReal) {
-  map.flyTo({ center: [lon, lat], zoom: 15 });
-  setMe(lat, lon);
-  loadAround(lat, lon);
+function start(pos, isReal) {
+  applyPosition(pos, true);
+  loadAround(pos.lat, pos.lon);
   if (!isReal) {
     toast("現在地を取得できないため東京駅周辺を表示しています");
   }
 }
 
-map.on("load", () => {
-  if (!navigator.geolocation) {
-    start(FALLBACK.lat, FALLBACK.lon, false);
-    return;
+map.on("load", async () => {
+  setLocating(true); // GPS取得中のローディング表示
+  try {
+    // 起動時は30秒以内のキャッシュ位置を許容して表示を早める
+    const pos = await getPosition(30000);
+    start(pos, true);
+  } catch {
+    start({ lat: FALLBACK.lat, lon: FALLBACK.lon, accuracy: null, ts: Date.now() }, false);
+  } finally {
+    setLocating(false);
   }
-  navigator.geolocation.getCurrentPosition(
-    (pos) => start(pos.coords.latitude, pos.coords.longitude, true),
-    () => start(FALLBACK.lat, FALLBACK.lon, false),
-    { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
-  );
 });

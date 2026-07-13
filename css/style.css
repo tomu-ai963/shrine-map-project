@@ -160,6 +160,26 @@ body {
   opacity: 1;
 }
 
+/* ---------- 現在地の再取得ボタン ---------- */
+#locate-btn {
+  position: fixed;
+  bottom: 22px;
+  left: 12px;
+  z-index: 25;
+  padding: 9px 14px;
+  background: rgba(22, 19, 17, 0.95);
+  border: 1px solid var(--gold);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 12px;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+#locate-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
 /* ---------- MapLibre ポップアップ上書き ---------- */
 .maplibregl-popup-content {
   background: var(--bg-soft);
@@ -471,4 +491,10 @@ body {
 }
 .goshuin-empty a {
   color: var(--gold-bright);
+}
+.goshuin-notice {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-top: 12px;
 }

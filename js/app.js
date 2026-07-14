@@ -405,6 +405,152 @@ async function submitFeedback() {
   }
 }
 
+/* ---------- 新規追加申請フォーム ----------
+ * 地図に未登録の神社・寺院を申請する。既存の feedback と同じ
+ * POST /feedback を issue_type: new_shrine / new_temple で使う。
+ * 位置は自動取得 (現在地優先、取得不可なら地図中心) で手入力させない。 */
+let nsEls = null; // モーダルのDOM参照(初回生成後キャッシュ)
+let nsType = "shrine"; // 種別の選択 "shrine" | "temple"
+let nsPos = null; // 申請位置 { lat, lon } (現在地 or 地図中心)
+let nsOpenSeq = 0; // 開閉のたびに増やし、古い位置取得の結果を捨てる
+
+function buildNewShrineModal() {
+  const overlay = document.createElement("div");
+  overlay.className = "fb-overlay";
+  overlay.innerHTML = `
+    <div class="fb-modal" role="dialog" aria-modal="true">
+      <div class="fb-head">
+        <span class="fb-title">神社・寺院の追加申請</span>
+        <button class="fb-close" aria-label="閉じる">×</button>
+      </div>
+      <div class="ns-pos"></div>
+
+      <label class="fb-label">種別</label>
+      <div class="ns-type">
+        <button type="button" class="ns-type-btn" data-type="shrine">⛩️ 神社</button>
+        <button type="button" class="ns-type-btn" data-type="temple">🏯 寺院</button>
+      </div>
+
+      <label class="fb-label">名前（必須）</label>
+      <input type="text" class="ns-name" placeholder="例: ○○神社" />
+
+      <label class="fb-label">自由コメント</label>
+      <textarea class="ns-comment" rows="3" placeholder="場所の目印などあればご自由に"></textarea>
+
+      <button class="btn btn-checkin ns-submit">この場所で申請する</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const els = {
+    overlay,
+    pos: overlay.querySelector(".ns-pos"),
+    typeBtns: overlay.querySelectorAll(".ns-type-btn"),
+    name: overlay.querySelector(".ns-name"),
+    comment: overlay.querySelector(".ns-comment"),
+    submit: overlay.querySelector(".ns-submit"),
+    close: overlay.querySelector(".fb-close"),
+  };
+
+  els.close.addEventListener("click", closeNewShrineForm);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) closeNewShrineForm();
+  });
+  els.typeBtns.forEach((b) => {
+    b.addEventListener("click", () => {
+      nsType = b.dataset.type;
+      els.typeBtns.forEach((x) =>
+        x.classList.toggle("active", x.dataset.type === nsType)
+      );
+    });
+  });
+  els.submit.addEventListener("click", submitNewShrine);
+
+  return els;
+}
+
+async function openNewShrineForm() {
+  if (!nsEls) nsEls = buildNewShrineModal();
+  const seq = ++nsOpenSeq;
+
+  // リセット (種別は神社を既定に)
+  nsType = "shrine";
+  nsEls.typeBtns.forEach((x) =>
+    x.classList.toggle("active", x.dataset.type === "shrine")
+  );
+  nsEls.name.value = "";
+  nsEls.comment.value = "";
+  nsEls.submit.textContent = "この場所で申請する";
+
+  // 位置は自動取得。取得完了まで送信は不可にする。
+  nsPos = null;
+  nsEls.submit.disabled = true;
+  nsEls.pos.textContent = "📡 現在地を取得中…";
+  nsEls.overlay.classList.add("show");
+
+  const pos = await getFreshPosition();
+  // 取得待ちの間に閉じて開き直した場合は古い結果を捨てる
+  if (seq !== nsOpenSeq) return;
+  if (pos) {
+    nsPos = { lat: pos.lat, lon: pos.lon };
+    nsEls.pos.textContent = "📍 現在地の位置で申請します（位置の入力は不要です）";
+  } else {
+    const c = map.getCenter();
+    nsPos = { lat: c.lat, lon: c.lng };
+    nsEls.pos.textContent =
+      "📍 現在地を取得できないため、地図の中心位置で申請します";
+  }
+  nsEls.submit.disabled = false;
+}
+
+function closeNewShrineForm() {
+  nsOpenSeq++;
+  if (nsEls) nsEls.overlay.classList.remove("show");
+}
+
+async function submitNewShrine() {
+  // フィードバックと同様にローカル保存の救済がないため、オフラインでは送信しない
+  if (navigator.onLine === false) {
+    toast("📡 オフラインです。接続を確認してから再度お試しください");
+    return;
+  }
+  if (!nsPos) return; // 位置取得前 (ボタンは disabled のはずだが念のため)
+
+  const name = nsEls.name.value.trim();
+  if (!name) {
+    toast("神社・寺院の名前を入力してください");
+    return;
+  }
+  const comment = nsEls.comment.value.trim();
+
+  const payload = {
+    shrine_id: null,
+    shrine_name: name,
+    issue_type: nsType === "temple" ? "new_temple" : "new_shrine",
+    comment: comment || null,
+    lat: nsPos.lat,
+    lon: nsPos.lon,
+  };
+
+  nsEls.submit.disabled = true;
+  nsEls.submit.textContent = "送信中…";
+  try {
+    const res = await fetch(`${API_BASE}/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(`API ${res.status}`);
+    closeNewShrineForm();
+    toast("ありがとうございます！確認のうえ地図への追加を検討します");
+  } catch (e) {
+    console.error(e);
+    nsEls.submit.disabled = false;
+    nsEls.submit.textContent = "この場所で申請する";
+    toast("⚠️ 送信に失敗しました。時間をおいて再度お試しください");
+  }
+}
+
 /* ---------- 現在地マーカー ---------- */
 let meMarker = null;
 function setMe(lat, lon) {
@@ -440,6 +586,11 @@ async function relocate() {
   }
 }
 locateBtn.addEventListener("click", relocate);
+
+/* ---------- 新規追加申請ボタン (index.html に常設) ---------- */
+document
+  .getElementById("add-shrine-btn")
+  .addEventListener("click", openNewShrineForm);
 
 /* ---------- オンライン/オフライン状態の案内 ----------
  * 常設バナーは offline-banner.js が担当。ここでは地図ページ固有の案内

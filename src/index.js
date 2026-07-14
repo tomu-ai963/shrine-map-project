@@ -8,7 +8,7 @@
  *     - limit    : 最大件数 (任意, 既定 50, 最大 200)
  *     - type     : shrine | temple で絞り込み (任意)
  *   GET /health  : 稼働確認 (件数を返す)
- *   POST /feedback : データ修正フィードバックの登録
+ *   POST /feedback : データ修正フィードバック・未登録社寺の新規追加申請の登録
  *   POST /checkin  : チェックイン (サーバー側で現在地と社寺の距離を検証して保存)
  *   POST /goshuin  : localStorage 既存データの一括移行専用 (records[] 必須)
  *   GET /goshuin?device_id=xxx : device_id に紐づく御朱印コレクションの取得
@@ -55,6 +55,10 @@ const ALLOWED_ISSUE_TYPES = new Set([
   "not_exist",
   "comment_only",
 ]);
+// 未登録の神社・寺院の新規追加申請。既存ピンに紐づかないため
+// shrine_id は持たず (null)、shrine_name と lat/lon を必須とする。
+// 他の issue_type とのカンマ混在は不可 (単独指定のみ)。
+const NEW_PLACE_ISSUE_TYPES = new Set(["new_shrine", "new_temple"]);
 const MAX_SHRINE_ID_LEN = 64;
 const MAX_SHRINE_NAME_LEN = 200;
 const MAX_ISSUE_TYPE_LEN = 100;
@@ -235,30 +239,37 @@ async function handleFeedback(request, env, cors) {
     return json({ error: "invalid JSON body" }, 400, cors);
   }
 
-  // shrine_id: 必須。長さ上限を超えるものは拒否。
-  const shrineId =
-    typeof body.shrine_id === "string" || typeof body.shrine_id === "number"
-      ? String(body.shrine_id).trim()
-      : "";
-  if (!shrineId || shrineId.length > MAX_SHRINE_ID_LEN) {
-    return json({ error: "shrine_id が不正です" }, 400, cors);
-  }
-
-  // issue_type: 必須。カンマ区切りの各値が許可リストに含まれること。
+  // issue_type: 必須。新規追加申請 (new_shrine / new_temple) は単独指定のみ、
+  // それ以外はカンマ区切りの各値が許可リストに含まれること。
   const issueType = typeof body.issue_type === "string" ? body.issue_type : "";
   if (!issueType || issueType.length > MAX_ISSUE_TYPE_LEN) {
     return json({ error: "issue_type が不正です" }, 400, cors);
   }
-  const issueTokens = issueType.split(",");
-  if (issueTokens.some((t) => !ALLOWED_ISSUE_TYPES.has(t))) {
-    return json(
-      {
-        error: "issue_type に許可されていない値が含まれています",
-        allowed: [...ALLOWED_ISSUE_TYPES],
-      },
-      400,
-      cors
-    );
+  const isNewPlace = NEW_PLACE_ISSUE_TYPES.has(issueType);
+  if (!isNewPlace) {
+    const issueTokens = issueType.split(",");
+    if (issueTokens.some((t) => !ALLOWED_ISSUE_TYPES.has(t))) {
+      return json(
+        {
+          error: "issue_type に許可されていない値が含まれています",
+          allowed: [...ALLOWED_ISSUE_TYPES, ...NEW_PLACE_ISSUE_TYPES],
+        },
+        400,
+        cors
+      );
+    }
+  }
+
+  // shrine_id: 既存ピンへの修正では必須。新規追加申請は null 固定。
+  let shrineId = null;
+  if (!isNewPlace) {
+    shrineId =
+      typeof body.shrine_id === "string" || typeof body.shrine_id === "number"
+        ? String(body.shrine_id).trim()
+        : "";
+    if (!shrineId || shrineId.length > MAX_SHRINE_ID_LEN) {
+      return json({ error: "shrine_id が不正です" }, 400, cors);
+    }
   }
 
   // 任意フィールド: 長さ上限を超えるものは拒否。
@@ -290,12 +301,22 @@ async function handleFeedback(request, env, cors) {
     lon = body.lon;
   }
 
-  // shrine_id が shrines テーブルに実在するか確認してから書き込む
-  const shrine = await env.DB.prepare("SELECT id FROM shrines WHERE id = ?")
-    .bind(shrineId)
-    .first();
-  if (!shrine) {
-    return json({ error: "存在しない shrine_id です" }, 400, cors);
+  // 新規追加申請: 名前と位置が無ければ運用者が確認できないため必須にする
+  if (isNewPlace) {
+    if (!shrineName || !shrineName.trim()) {
+      return json({ error: "新規追加申請では shrine_name が必須です" }, 400, cors);
+    }
+    if (lat == null || lon == null) {
+      return json({ error: "新規追加申請では lat / lon が必須です" }, 400, cors);
+    }
+  } else {
+    // 既存ピンへの修正: shrine_id が shrines テーブルに実在するか確認してから書き込む
+    const shrine = await env.DB.prepare("SELECT id FROM shrines WHERE id = ?")
+      .bind(shrineId)
+      .first();
+    if (!shrine) {
+      return json({ error: "存在しない shrine_id です" }, 400, cors);
+    }
   }
 
   const result = await env.DB.prepare(

@@ -198,6 +198,26 @@ body {
   cursor: wait;
 }
 
+/* ---------- 新規追加申請ボタン (locate-btn の直上に常設) ---------- */
+#add-shrine-btn {
+  position: fixed;
+  bottom: 64px;
+  left: 12px;
+  z-index: 25;
+  padding: 9px 14px;
+  background: rgba(22, 19, 17, 0.95);
+  border: 1px solid var(--vermilion-bright);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: var(--font-jp);
+  font-size: 12px;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+#add-shrine-btn:active {
+  background: rgba(193, 39, 45, 0.25);
+}
+
 /* ---------- MapLibre ポップアップ上書き ---------- */
 .maplibregl-popup-content {
   background: var(--bg-soft);
@@ -367,7 +387,9 @@ body {
   margin: 12px 0 6px;
 }
 .fb-name,
-.fb-comment {
+.fb-comment,
+.ns-name,
+.ns-comment {
   width: 100%;
   padding: 10px 12px;
   background: #0c0a08;
@@ -378,7 +400,9 @@ body {
   font-size: 14px;
 }
 .fb-name:focus,
-.fb-comment:focus {
+.fb-comment:focus,
+.ns-name:focus,
+.ns-comment:focus {
   outline: none;
   border-color: var(--gold);
 }
@@ -418,6 +442,39 @@ body {
   accent-color: var(--vermilion);
 }
 .fb-submit {
+  margin-top: 18px;
+}
+
+/* ============================================================
+   新規追加申請モーダル (fb-* の骨格を流用し ns-* で固有部を追加)
+   ============================================================ */
+.ns-pos {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 14px;
+}
+.ns-type {
+  display: flex;
+  gap: 10px;
+}
+.ns-type-btn {
+  flex: 1;
+  padding: 10px;
+  background: #0c0a08;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--font-jp);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ns-type-btn.active {
+  background: rgba(193, 39, 45, 0.25);
+  border-color: var(--vermilion-bright);
+  color: #fff;
+}
+.ns-submit {
   margin-top: 18px;
 }
 

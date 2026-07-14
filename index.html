@@ -10,6 +10,14 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <title>⛩️ デジタル御朱印帳</title>
+    <!-- PWA: GitHub Pages はサブパス配信 (/shrine-map-project/) のため相対パスで参照する -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icons/png/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/png/icon-192.png" />
+    <meta name="theme-color" content="#F0EFEB" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="御朱印帳" />
     <!-- SRIハッシュは npm レジストリ公式 tarball (maplibre-gl@4.7.1) の
          dist ファイルから算出 (sha384)。バージョン更新時は再計算すること。 -->
     <link

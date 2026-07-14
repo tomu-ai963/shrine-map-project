@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Android適応アイコン 前景レイヤー（背景透過・セーフゾーン中央66%内に収まる構図） -->
+  <defs>
+    <linearGradient id="stone" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F1EFEA"/>
+      <stop offset="1" stop-color="#DEDCD6"/>
+    </linearGradient>
+    <linearGradient id="stoneDeep" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#EAE8E2"/>
+      <stop offset="1" stop-color="#D6D4CD"/>
+    </linearGradient>
+    <linearGradient id="pillarShade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#C4C2BC" stop-opacity="0"/>
+      <stop offset="0.72" stop-color="#C4C2BC" stop-opacity="0"/>
+      <stop offset="1" stop-color="#C4C2BC" stop-opacity="0.35"/>
+    </linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+  </defs>
+
+  <!-- 接地の影 -->
+  <ellipse cx="512" cy="768" rx="290" ry="18" fill="#C4C2BC" opacity="0.30" filter="url(#soft)"/>
+
+  <g id="torii">
+    <path d="M236 310 Q512 340 788 310 L788 366 Q512 396 236 366 Z"
+          fill="#C4C2BC" opacity="0.25" filter="url(#soft)"/>
+    <rect x="286" y="480" width="452" height="34" fill="#C4C2BC" opacity="0.22" filter="url(#soft)"/>
+
+    <rect x="322" y="378" width="56" height="376" rx="6" fill="url(#stone)"/>
+    <rect x="646" y="378" width="56" height="376" rx="6" fill="url(#stone)"/>
+    <rect x="322" y="378" width="56" height="376" rx="6" fill="url(#pillarShade)"/>
+    <rect x="646" y="378" width="56" height="376" rx="6" fill="url(#pillarShade)"/>
+
+    <rect x="494" y="384" width="36" height="88" fill="url(#stoneDeep)"/>
+    <rect x="286" y="468" width="452" height="34" rx="4" fill="url(#stoneDeep)"/>
+    <rect x="276" y="352" width="472" height="32" rx="4" fill="url(#stoneDeep)"/>
+    <path d="M236 300 Q512 330 788 300 L788 348 Q512 378 236 348 Z" fill="url(#stone)"/>
+
+    <g stroke="#C4C2BC" stroke-width="2.5" fill="none" opacity="0.35" stroke-linecap="round">
+      <path d="M320 322 Q420 334 470 328 T620 330"/>
+      <path d="M560 476 Q600 484 660 480"/>
+      <path d="M338 520 Q346 580 336 640"/>
+      <path d="M672 560 Q666 610 676 668"/>
+    </g>
+    <g stroke="#D8D6D0" stroke-width="2" fill="none" opacity="0.5" stroke-linecap="round">
+      <path d="M430 364 Q470 370 480 366"/>
+      <path d="M352 430 Q360 450 352 464"/>
+      <path d="M660 700 Q668 716 662 734"/>
+    </g>
+  </g>
+</svg>

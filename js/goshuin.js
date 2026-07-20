@@ -14,7 +14,7 @@ function render(list, notice) {
     root.innerHTML = `
       <div class="goshuin-empty">
         まだ御朱印がありません。<br />
-        <a href="index.html">地図</a> から社寺を訪れて授かりましょう。
+        <a href="map.html">地図</a> から社寺を訪れて授かりましょう。
       </div>`;
     return;
   }

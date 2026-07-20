@@ -3,7 +3,7 @@
 
    localStorage を即時表示用キャッシュ兼オフラインフォールバックとし、
    サーバー(D1)を正とする。device_id (UUID) で匿名に紐付ける。
-   index.html / goshuin.html の両方から app.js / goshuin.js より先に読み込む。
+   index.html / map.html の両方から app.js / goshuin.js より先に読み込む。
    ============================================================ */
 
 window.GoshuinStore = (() => {

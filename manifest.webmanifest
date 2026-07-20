@@ -2,7 +2,7 @@
   "name": "デジタル御朱印帳",
   "short_name": "御朱印帳",
   "description": "神社参拝・御朱印記録アプリ",
-  "start_url": "./goshuin.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#FBFBF9",

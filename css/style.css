@@ -21,7 +21,7 @@
 }
 
 /* ---------- 御朱印帳ページ: 白基調テーマ (body スコープで変数を上書き) ----------
-   地図ページ (index.html) は黒基調のまま。goshuin.html の body にのみ
+   地図ページ (map.html) は黒基調のまま。御朱印帳 (index.html) の body にのみ
    class="page-goshuin" を付与し、ページ単位でテーマを切り替える。 */
 body.page-goshuin {
   --bg: #faf8f1;
@@ -185,7 +185,8 @@ body.page-goshuin .app-header {
 /* ---------- ステータストースト ---------- */
 .toast {
   position: fixed;
-  bottom: calc(var(--tab-h) + 14px + env(safe-area-inset-bottom));
+  /* 左下に重なる 現在地(tab+12px)/追加申請(tab+54px) ボタンの上に逃がす */
+  bottom: calc(var(--tab-h) + 100px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   z-index: 30;
@@ -626,7 +627,7 @@ body.page-goshuin .goshuin-card {
 }
 
 /* ============================================================
-   起動スプラッシュ (goshuin.html)
+   起動スプラッシュ (index.html = 御朱印帳)
    御朱印帳の表紙イメージ: 生成り地 + 金の麻の葉文様 + 淡ピンクの
    ぼかし + 中央に短冊ラベル。js/splash.js が表示制御を行う。
    ============================================================ */

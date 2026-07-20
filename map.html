@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <!-- user-scalable=no / maximum-scale=1.0 は意図的:
+         ページ全体のピンチズームを止め、地図操作との競合 (誤ってUIごと拡大) を防ぐ。
+         地図自体のピンチズームは MapLibre が地図領域内で処理する (app.js の touchZoomRotate)。 -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>⛩️ デジタル御朱印帳</title>
+    <!-- PWA: GitHub Pages はサブパス配信 (/shrine-map-project/) のため相対パスで参照する -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icons/png/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/png/icon-192.png" />
+    <meta name="theme-color" content="#F0EFEB" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="御朱印帳" />
+    <!-- SRIハッシュは npm レジストリ公式 tarball (maplibre-gl@4.7.1) の
+         dist ファイルから算出 (sha384)。バージョン更新時は再計算すること。 -->
+    <link
+      href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
+      rel="stylesheet"
+      integrity="sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>⛩️ 御朱印巡り</h1>
+    </header>
+
+    <div id="map"></div>
+    <p class="data-notice">
+      神社データは整備中です。お気づきの点はピンの「✏️ 情報を修正する」からフィードバックをお寄せください
+    </p>
+    <!-- 未登録の神社・寺院の新規追加申請 (常設。配置は locate-btn と同じ左下系) -->
+    <button id="add-shrine-btn" type="button">📍 ここに神社・寺院を追加申請</button>
+    <div id="toast" class="toast"></div>
+
+    <!-- 下部固定タブ (両ページ共通マークアップ。現在ページに .active) -->
+    <nav class="tab-bar">
+      <a class="tab-item" href="index.html">📜 御朱印帳</a>
+      <a class="tab-item active" href="map.html">🗺️ 地図</a>
+    </nav>
+
+    <script
+      src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"
+      integrity="sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj"
+      crossorigin="anonymous"
+    ></script>
+    <script src="js/offline-banner.js"></script>
+    <script src="js/goshuin-store.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>

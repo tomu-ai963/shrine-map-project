@@ -110,7 +110,7 @@ const map = new maplibregl.Map({
   center: [FALLBACK.lon, FALLBACK.lat],
   zoom: 14,
   // モバイルのピンチズームは地図領域内で有効 (MapLibre 既定値だが明示)。
-  // ページ全体のズームは index.html の viewport (user-scalable=no) で
+  // ページ全体のズームは map.html の viewport (user-scalable=no) で
   // 意図的に止めており、地図操作とは競合しない。
   touchZoomRotate: true,
   doubleClickZoom: true,
@@ -587,7 +587,7 @@ async function relocate() {
 }
 locateBtn.addEventListener("click", relocate);
 
-/* ---------- 新規追加申請ボタン (index.html に常設) ---------- */
+/* ---------- 新規追加申請ボタン (map.html に常設) ---------- */
 document
   .getElementById("add-shrine-btn")
   .addEventListener("click", openNewShrineForm);

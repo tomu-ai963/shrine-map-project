@@ -2,46 +2,16 @@
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
-    />
+    <!-- 旧URL互換のためのリダイレクトスタブ:
+         御朱印帳は index.html (ルート) に移動した。
+         既存ブックマーク・外部リンク (goshuin.html) を新URLへ誘導する。 -->
+    <meta http-equiv="refresh" content="0; url=./index.html" />
     <title>📜 御朱印帳</title>
-    <!-- PWA: GitHub Pages はサブパス配信 (/shrine-map-project/) のため相対パスで参照する -->
-    <link rel="manifest" href="manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="icons/png/apple-touch-icon.png" />
-    <link rel="icon" type="image/png" sizes="192x192" href="icons/png/icon-192.png" />
-    <meta name="theme-color" content="#F0EFEB" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="御朱印帳" />
-    <link rel="stylesheet" href="css/style.css" />
+    <script>
+      location.replace("./index.html");
+    </script>
   </head>
-  <body class="page-goshuin">
-    <!-- 起動スプラッシュ (御朱印帳の表紙風)。直後の splash.js が
-         セッション初回のみ表示し、フェードアウト後に非表示化する -->
-    <div id="splash" aria-hidden="true">
-      <div class="splash-label">御朱印帳</div>
-    </div>
-    <script src="js/splash.js"></script>
-
-    <header class="app-header">
-      <h1>📜 御朱印帳</h1>
-    </header>
-
-    <main class="goshuin-page">
-      <p class="intro">これまでに授かった御朱印</p>
-      <div id="goshuin-list"></div>
-    </main>
-
-    <!-- 下部固定タブ (両ページ共通マークアップ。現在ページに .active) -->
-    <nav class="tab-bar">
-      <a class="tab-item active" href="goshuin.html">📜 御朱印帳</a>
-      <a class="tab-item" href="index.html">🗺️ 地図</a>
-    </nav>
-
-    <script src="js/offline-banner.js"></script>
-    <script src="js/goshuin-store.js"></script>
-    <script src="js/goshuin.js"></script>
+  <body>
+    <p><a href="./index.html">御朱印帳はこちらに移動しました</a></p>
   </body>
 </html>

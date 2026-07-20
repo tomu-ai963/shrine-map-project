@@ -3,7 +3,7 @@
 
    navigator.onLine と online/offline イベントでページ全体の
    接続状態を検知し、オフライン中は控えめなバナーを常時表示する。
-   index.html / goshuin.html の両方で読み込む。
+   index.html / map.html の両方で読み込む。
    ============================================================ */
 
 (function () {

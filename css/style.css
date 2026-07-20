@@ -15,6 +15,24 @@
   --line: #2b2620;
   --shadow: 0 8px 30px rgba(0, 0, 0, 0.55);
   --font-jp: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
+  /* 下部固定タブ (safe-area は各利用箇所で加算する) */
+  --tab-h: 52px;
+  --tabbar-bg: linear-gradient(0deg, rgba(12, 11, 10, 0.97), rgba(12, 11, 10, 0.88));
+}
+
+/* ---------- 御朱印帳ページ: 白基調テーマ (body スコープで変数を上書き) ----------
+   地図ページ (index.html) は黒基調のまま。goshuin.html の body にのみ
+   class="page-goshuin" を付与し、ページ単位でテーマを切り替える。 */
+body.page-goshuin {
+  --bg: #faf8f1;
+  --bg-soft: #ffffff;
+  --gold: #a9852f;
+  --gold-bright: #8f6d1e;
+  --text: #3b3226;
+  --text-dim: #8d8170;
+  --line: #e5dcc9;
+  --shadow: 0 8px 24px rgba(90, 75, 40, 0.14);
+  --tabbar-bg: linear-gradient(0deg, rgba(251, 249, 243, 0.98), rgba(251, 249, 243, 0.9));
 }
 
 * {
@@ -57,19 +75,45 @@ body {
   font-weight: 600;
 }
 
-.app-header .nav-link {
-  font-size: 13px;
-  color: var(--text);
-  text-decoration: none;
-  padding: 6px 12px;
-  border: 1px solid var(--gold);
-  border-radius: 999px;
-  background: rgba(201, 164, 76, 0.08);
-  transition: background 0.2s;
+body.page-goshuin .app-header {
+  background: linear-gradient(180deg, rgba(251, 249, 243, 0.96), rgba(251, 249, 243, 0.72));
 }
 
-.app-header .nav-link:active {
-  background: rgba(201, 164, 76, 0.25);
+/* ---------- 下部固定タブナビゲーション (両ページ共通) ---------- */
+.tab-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 35;
+  display: flex;
+  height: calc(var(--tab-h) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--tabbar-bg);
+  border-top: 1px solid var(--line);
+  backdrop-filter: blur(6px);
+}
+.tab-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  border-top: 2px solid transparent;
+  transition: background 0.2s;
+}
+.tab-item:active {
+  background: rgba(201, 164, 76, 0.15);
+}
+.tab-item.active {
+  color: var(--gold-bright);
+  font-weight: 600;
+  border-top-color: var(--gold);
+  background: rgba(201, 164, 76, 0.1);
 }
 
 /* ---------- 地図 ---------- */
@@ -77,6 +121,8 @@ body {
   position: absolute;
   inset: 0;
   top: 0;
+  /* 下部タブに OSM 帰属表記が隠れないよう地図領域をタブ上端まで */
+  bottom: calc(var(--tab-h) + env(safe-area-inset-bottom));
 }
 
 /* 現在地ピン */
@@ -139,7 +185,7 @@ body {
 /* ---------- ステータストースト ---------- */
 .toast {
   position: fixed;
-  bottom: 22px;
+  bottom: calc(var(--tab-h) + 14px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   z-index: 30;
@@ -181,7 +227,7 @@ body {
 /* ---------- 現在地の再取得ボタン ---------- */
 #locate-btn {
   position: fixed;
-  bottom: 22px;
+  bottom: calc(var(--tab-h) + 12px + env(safe-area-inset-bottom));
   left: 12px;
   z-index: 25;
   padding: 9px 14px;
@@ -201,7 +247,7 @@ body {
 /* ---------- 新規追加申請ボタン (locate-btn の直上に常設) ---------- */
 #add-shrine-btn {
   position: fixed;
-  bottom: 64px;
+  bottom: calc(var(--tab-h) + 54px + env(safe-area-inset-bottom));
   left: 12px;
   z-index: 25;
   padding: 9px 14px;
@@ -482,7 +528,8 @@ body {
    御朱印帳ページ
    ============================================================ */
 .goshuin-page {
-  padding: 64px 16px 40px;
+  /* 下部は固定タブぶんの逃げを確保 */
+  padding: 64px 16px calc(40px + var(--tab-h) + env(safe-area-inset-bottom));
   max-width: 720px;
   margin: 0 auto;
 }
@@ -516,6 +563,10 @@ body {
   justify-content: space-between;
   box-shadow: var(--shadow);
   overflow: hidden;
+}
+/* 白基調テーマでは和紙風の淡いグラデーションに差し替え */
+body.page-goshuin .goshuin-card {
+  background: radial-gradient(circle at 30% 20%, #fffefb, #f4ecd9);
 }
 .goshuin-card::before {
   /* 朱色の落款風シール */
@@ -572,4 +623,61 @@ body {
   color: var(--text-dim);
   font-size: 12px;
   margin-top: 12px;
+}
+
+/* ============================================================
+   起動スプラッシュ (goshuin.html)
+   御朱印帳の表紙イメージ: 生成り地 + 金の麻の葉文様 + 淡ピンクの
+   ぼかし + 中央に短冊ラベル。js/splash.js が表示制御を行う。
+   ============================================================ */
+#splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f7f2e6;
+  /* 上層: 淡ピンク/金のぼかし, 下層: 麻の葉文様 (インラインSVG) */
+  background-image:
+    radial-gradient(circle at 18% 12%, rgba(232, 180, 184, 0.4), transparent 42%),
+    radial-gradient(circle at 85% 85%, rgba(201, 164, 76, 0.22), transparent 46%),
+    radial-gradient(circle at 80% 15%, rgba(176, 170, 160, 0.25), transparent 38%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='62.35' viewBox='0 0 36 62.35'%3E%3Cpath fill='none' stroke='%23c9a44c' stroke-opacity='0.26' stroke-width='1' d='M0 0H36 M0 31.18H36 M0 0L36 62.35 M36 0L0 62.35 M0 0L18 10.39 M36 0L18 10.39 M18 31.18V10.39 M0 0V20.78 M36 0V20.78 M18 31.18L0 20.78 M18 31.18L36 20.78 M0 62.35V41.57 M36 62.35V41.57 M18 31.18L0 41.57 M18 31.18L36 41.57 M18 31.18V51.96 M0 62.35L18 51.96 M36 62.35L18 51.96'/%3E%3C/svg%3E");
+  background-size: auto, auto, auto, 54px 93.5px;
+  opacity: 1;
+  transition: opacity 0.55s ease;
+}
+#splash.hide {
+  opacity: 0;
+  pointer-events: none;
+}
+#splash[hidden] {
+  display: none;
+}
+.splash-label {
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  background: #ffffff;
+  padding: 36px 24px;
+  border: 1.5px solid #b08d3c;
+  outline: 1px solid rgba(176, 141, 60, 0.55);
+  outline-offset: 5px;
+  font-family: var(--font-jp);
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  color: #3f3115;
+  box-shadow: 0 10px 34px rgba(90, 75, 40, 0.28);
+  animation: splash-label-in 0.6s ease-out both;
+}
+@keyframes splash-label-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }

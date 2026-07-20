@@ -31,7 +31,6 @@
   <body>
     <header class="app-header">
       <h1>⛩️ 御朱印巡り</h1>
-      <a class="nav-link" href="goshuin.html">📜 御朱印帳</a>
     </header>
 
     <div id="map"></div>
@@ -41,6 +40,12 @@
     <!-- 未登録の神社・寺院の新規追加申請 (常設。配置は locate-btn と同じ左下系) -->
     <button id="add-shrine-btn" type="button">📍 ここに神社・寺院を追加申請</button>
     <div id="toast" class="toast"></div>
+
+    <!-- 下部固定タブ (両ページ共通マークアップ。現在ページに .active) -->
+    <nav class="tab-bar">
+      <a class="tab-item" href="goshuin.html">📜 御朱印帳</a>
+      <a class="tab-item active" href="index.html">🗺️ 地図</a>
+    </nav>
 
     <script
       src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"

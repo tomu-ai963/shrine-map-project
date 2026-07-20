@@ -28,7 +28,7 @@
     />
     <link rel="stylesheet" href="css/style.css" />
   </head>
-  <body>
+  <body class="page-map">
     <header class="app-header">
       <h1>⛩️ 御朱印巡り</h1>
     </header>
@@ -40,6 +40,11 @@
     <!-- 未登録の神社・寺院の新規追加申請 (常設。配置は locate-btn と同じ左下系) -->
     <button id="add-shrine-btn" type="button">📍 ここに神社・寺院を追加申請</button>
     <div id="toast" class="toast"></div>
+
+    <!-- 御朱印取得スタンプ演出 (成功時のみ app.js が .show を付与) -->
+    <div id="stamp-overlay" aria-hidden="true">
+      <div class="stamp-seal">奉拝</div>
+    </div>
 
     <!-- 下部固定タブ (両ページ共通マークアップ。現在ページに .active) -->
     <nav class="tab-bar">

@@ -78,6 +78,23 @@ async function getFreshPosition() {
 GoshuinStore.sync();
 
 /* ---------- トースト ---------- */
+/* ---------- 御朱印取得スタンプ演出 ----------
+   チェックイン成功時のみ呼ぶ (失敗時は既存のエラートーストに任せる)。
+   押印0.32s → ホールド → フェード0.2s の計約0.7秒で resolve する。 */
+function playStampSeal() {
+  const overlay = document.getElementById("stamp-overlay");
+  if (!overlay) return Promise.resolve();
+  return new Promise((resolve) => {
+    overlay.classList.remove("fade");
+    overlay.classList.add("show");
+    setTimeout(() => overlay.classList.add("fade"), 500);
+    setTimeout(() => {
+      overlay.classList.remove("show", "fade");
+      resolve();
+    }, 720);
+  });
+}
+
 let toastTimer;
 function toast(msg) {
   const el = document.getElementById("toast");
@@ -177,6 +194,9 @@ function buildPopupContent(shrine) {
     const pos = await getFreshPosition();
     const result = await GoshuinStore.checkin(shrine, pos);
     if (result.ok) {
+      // 保存確定後に押印演出 → 完了後に「取得済み」表示へ。
+      // オフライン保存 (ok:true, offline:true) も授与成功として演出する
+      await playStampSeal();
       toast(
         result.offline
           ? `🎉 ${shrine.name} の御朱印を授かりました（オフラインのため端末に保存。オンライン復帰後に自動で同期されます）`

@@ -10,8 +10,12 @@
  *   GET /health  : 稼働確認 (件数を返す)
  *   POST /feedback : データ修正フィードバック・未登録社寺の新規追加申請の登録
  *   POST /checkin  : チェックイン (サーバー側で現在地と社寺の距離を検証して保存)
- *   POST /goshuin  : localStorage 既存データの一括移行専用 (records[] 必須)
+ *                    オフライン保留記録の復帰確定用に checked_in_at (任意) を受け付ける
  *   GET /goshuin?device_id=xxx : device_id に紐づく御朱印コレクションの取得
+ *
+ *   ※ POST /goshuin (localStorage 一括移行) は距離検証を迂回できるため廃止した。
+ *     オフライン記録はクライアントが保留状態で保持し、復帰後に POST /checkin で
+ *     位置検証してから確定する (Issue #1)。
  *
  * D1(SQLite)には空間インデックスが無いため、
  *   1) 緯度経度のバウンディングボックスで SQL 側を粗く絞り込み
@@ -68,13 +72,14 @@ const MAX_COMMENT_LEN = 1000;
 const RATE_LIMIT_MAX = 5; // ウィンドウ内の最大リクエスト数
 const RATE_LIMIT_WINDOW_S = 60; // ウィンドウ幅[秒]
 
-/* ---------- /goshuin のバリデーション設定 ---------- */
+/* ---------- 御朱印系エンドポイント共通のバリデーション設定 ---------- */
 // device_id は UUID v4 形式のみ許可 (crypto.randomUUID() で発行される)
 const DEVICE_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 // checked_in_at は YYYY-MM-DD のみ許可 (それ以外はサーバー日付で補完)
 const CHECKED_IN_AT_RE = /^\d{4}-\d{2}-\d{2}$/;
-const MAX_GOSHUIN_RECORDS = 500; // 一括移行1リクエストあたりの上限件数
+// checked_in_at で遡れる最大日数 (オフライン保留記録の復帰確定を想定)
+const CHECKIN_BACKDATE_MAX_DAYS = 30;
 const GOSHUIN_RATE_MAX = 10; // 同一 device_id のウィンドウ内最大リクエスト数
 const GOSHUIN_RATE_WINDOW_S = 60;
 
@@ -334,7 +339,7 @@ async function handleFeedback(request, env, cors) {
 }
 
 /**
- * device_id ベースの簡易レート制限 (/goshuin 用)。
+ * device_id ベースの簡易レート制限 (/checkin 用)。
  * feedback の isRateLimited と同方式で goshuin_rate_limit テーブルを使う。
  */
 async function isGoshuinRateLimited(env, deviceId) {
@@ -362,10 +367,11 @@ async function isGoshuinRateLimited(env, deviceId) {
 
 /**
  * POST /checkin — サーバー側で距離を検証するチェックイン。
- * body: { device_id, shrine_id, lat, lon, accuracy? }
+ * body: { device_id, shrine_id, lat, lon, accuracy?, checked_in_at? }
  * shrines テーブルの正式な座標との Haversine 距離が CHECKIN_RADIUS_M 以内の
  * 場合のみ goshuin_collection へ保存する。座標偽装でUI判定を回避しても、
  * 送信座標が社寺から離れていればここで拒否される。
+ * checked_in_at はオフライン保留記録の復帰確定用 (チェックイン当日の日付を保持する)。
  */
 async function handleCheckin(request, env, cors) {
   let body;
@@ -465,12 +471,41 @@ async function handleCheckin(request, env, cors) {
     );
   }
 
+  // checked_in_at: 任意。オフライン保留記録の復帰確定でチェックイン当日の
+  // 日付を保持するために受け付ける。形式不正・未来日・遡り上限超過は
+  // 黙って本日(JST)へフォールバックする (距離検証こそが本体であり、
+  // 日付は本人のコレクション表示にしか使われないため拒否より寛容さを優先)。
+  const todayJst = new Date(Date.now() + 9 * 3600 * 1000)
+    .toISOString()
+    .slice(0, 10);
+  const oldestJst = new Date(
+    Date.now() + 9 * 3600 * 1000 - CHECKIN_BACKDATE_MAX_DAYS * 86400 * 1000
+  )
+    .toISOString()
+    .slice(0, 10);
+  let checkedInAt = todayJst;
+  if (
+    typeof body.checked_in_at === "string" &&
+    CHECKED_IN_AT_RE.test(body.checked_in_at) &&
+    body.checked_in_at <= todayJst &&
+    body.checked_in_at >= oldestJst
+  ) {
+    checkedInAt = body.checked_in_at;
+  } else if (body.checked_in_at != null) {
+    // 補正が起きたことを後から追跡できるようサーバーログに残す
+    // (wrangler tail / Workers Logs)。値は改行等を無害化しつつ長さも制限する。
+    console.warn(
+      `checkin: checked_in_at を補正 device=${deviceId} shrine=${shrineId} ` +
+        `指定=${JSON.stringify(body.checked_in_at).slice(0, 40)} → 採用=${checkedInAt}`
+    );
+  }
+
   const result = await env.DB.prepare(
     "INSERT OR IGNORE INTO goshuin_collection " +
       "(device_id, shrine_id, checked_in_at, created_at) " +
-      "VALUES (?, ?, date('now', '+9 hours'), datetime('now'))" // チェックイン日はJST基準
+      "VALUES (?, ?, ?, datetime('now'))"
   )
-    .bind(deviceId, shrineId)
+    .bind(deviceId, shrineId, checkedInAt)
     .run();
   const inserted = result.meta ? result.meta.changes : 0;
 
@@ -485,113 +520,6 @@ async function handleCheckin(request, env, cors) {
           ? `GPS精度が低いため位置が不正確な可能性があります (±${Math.round(accuracy)}m)`
           : undefined,
     },
-    201,
-    cors
-  );
-}
-
-/**
- * POST /goshuin — localStorage 既存データの一括移行専用。
- * body: { device_id, records: [{shrine_id, checked_in_at?}] }
- * 新規チェックインは距離検証付きの POST /checkin を使うこと。
- * (移行データは過去のチェックインのため位置検証はできない)
- * 同一 (device_id, shrine_id) は UNIQUE 制約 + INSERT OR IGNORE で重複登録しない。
- */
-async function handleGoshuinPost(request, env, cors) {
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: "invalid JSON body" }, 400, cors);
-  }
-
-  const deviceId =
-    typeof body.device_id === "string" ? body.device_id.trim() : "";
-  if (!DEVICE_ID_RE.test(deviceId)) {
-    return json({ error: "device_id が不正です (UUID形式のみ)" }, 400, cors);
-  }
-
-  if (await isGoshuinRateLimited(env, deviceId)) {
-    return json(
-      { error: "リクエストが多すぎます。しばらく待ってから再度お試しください" },
-      429,
-      cors
-    );
-  }
-
-  // 一括移行専用: records 配列のみ受け付ける (単発チェックインは /checkin へ)
-  const records = body.records;
-  if (!Array.isArray(records)) {
-    return json(
-      { error: "records (配列) が必要です。新規チェックインは POST /checkin を使ってください" },
-      400,
-      cors
-    );
-  }
-  if (records.length === 0) {
-    return json({ error: "records が空です" }, 400, cors);
-  }
-  if (records.length > MAX_GOSHUIN_RECORDS) {
-    return json(
-      { error: `records は${MAX_GOSHUIN_RECORDS}件以内にしてください` },
-      400,
-      cors
-    );
-  }
-
-  // checked_in_at 未指定時のデフォルト日付は JST 基準 (/checkin の
-  // date('now','+9 hours') と揃える)。ただし一括移行ではクライアントが
-  // 各記録の checked_in_at を明示的に送るのが通常で、このデフォルトが
-  // 使われるのは checked_in_at 欠落や不正形式のレコードに限られる。
-  const todayJst = new Date(Date.now() + 9 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
-  const normalized = [];
-  for (const r of records) {
-    const shrineId =
-      r && (typeof r.shrine_id === "string" || typeof r.shrine_id === "number")
-        ? String(r.shrine_id).trim()
-        : "";
-    if (!shrineId || shrineId.length > MAX_SHRINE_ID_LEN) {
-      return json({ error: "shrine_id が不正です" }, 400, cors);
-    }
-    const checkedInAt =
-      typeof r.checked_in_at === "string" && CHECKED_IN_AT_RE.test(r.checked_in_at)
-        ? r.checked_in_at
-        : todayJst;
-    normalized.push({ shrineId, checkedInAt });
-  }
-
-  // 全 shrine_id が shrines テーブルに実在するか確認してから書き込む
-  const uniqueIds = [...new Set(normalized.map((r) => r.shrineId))];
-  const placeholders = uniqueIds.map(() => "?").join(",");
-  const { results: found } = await env.DB.prepare(
-    `SELECT id FROM shrines WHERE id IN (${placeholders})`
-  )
-    .bind(...uniqueIds)
-    .all();
-  if (found.length !== uniqueIds.length) {
-    const foundSet = new Set(found.map((r) => r.id));
-    const missing = uniqueIds.filter((id) => !foundSet.has(id));
-    return json({ error: "存在しない shrine_id です", missing }, 400, cors);
-  }
-
-  // INSERT OR IGNORE で重複 (device_id, shrine_id) は黙ってスキップ
-  const stmt = env.DB.prepare(
-    "INSERT OR IGNORE INTO goshuin_collection " +
-      "(device_id, shrine_id, checked_in_at, created_at) " +
-      "VALUES (?, ?, ?, datetime('now'))"
-  );
-  const batchResults = await env.DB.batch(
-    normalized.map((r) => stmt.bind(deviceId, r.shrineId, r.checkedInAt))
-  );
-  const inserted = batchResults.reduce(
-    (n, r) => n + (r.meta ? r.meta.changes : 0),
-    0
-  );
-
-  return json(
-    { ok: true, received: normalized.length, inserted },
     201,
     cors
   );
@@ -640,7 +568,6 @@ const ROUTES = [
   { method: "GET",  path: "/goshuin",  access: "read",  handler: (req, url, env, cors) => handleGoshuinGet(url, env, cors) },
   { method: "POST", path: "/feedback", access: "write", handler: (req, url, env, cors) => handleFeedback(req, env, cors) },
   { method: "POST", path: "/checkin",  access: "write", handler: (req, url, env, cors) => handleCheckin(req, env, cors) },
-  { method: "POST", path: "/goshuin",  access: "write", handler: (req, url, env, cors) => handleGoshuinPost(req, env, cors) },
 ];
 
 export default {

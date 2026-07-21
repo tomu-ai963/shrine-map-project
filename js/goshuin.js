@@ -27,7 +27,7 @@ function render(list, notice) {
 
   list.forEach((g) => {
     const card = document.createElement("div");
-    card.className = "goshuin-card";
+    card.className = "goshuin-card" + (g.pending ? " goshuin-pending" : "");
     card.setAttribute("data-seal", g.type === "shrine" ? "神社" : "寺院");
 
     // OSM由来の name / prefecture は信頼できないため textContent で埋め込む(XSS対策)
@@ -44,7 +44,9 @@ function render(list, notice) {
     meta.append(
       document.createTextNode(g.prefecture || ""),
       document.createElement("br"),
-      document.createTextNode(g.date || "")
+      // pending はオフライン取得の未検証記録。オンライン復帰後の
+      // 位置検証 (sync) で確定するまで「確認待ち」と示す。
+      document.createTextNode((g.date || "") + (g.pending ? "（確認待ち）" : ""))
     );
 
     card.append(icon, name, meta);
@@ -63,12 +65,19 @@ function render(list, notice) {
 }
 
 async function init() {
-  // 1) キャッシュを即時表示
-  render(GoshuinStore.loadLocal());
+  // 1) キャッシュを即時表示 (確定済み + 保留)
+  render(GoshuinStore.loadAll());
 
-  // 2) サーバー同期 → 3) マージ結果で再描画
-  const { list, synced } = await GoshuinStore.sync();
-  render(list, synced ? "" : "⚠️ オフライン表示中 (サーバーと未同期)");
+  // 2) サーバー同期 (保留分の位置検証を含む) → 3) マージ結果で再描画
+  const { list, synced, rejected } = await GoshuinStore.sync();
+  const notices = [];
+  if (!synced) notices.push("⚠️ オフライン表示中 (サーバーと未同期)");
+  if (rejected > 0) {
+    notices.push(
+      `⚠️ ${rejected}件の記録は位置を確認できなかったため取り消されました`
+    );
+  }
+  render(list, notices.join(" / "));
 }
 
 // オンライン復帰したら未同期分をサーバーへ送り、最新状態で描き直す

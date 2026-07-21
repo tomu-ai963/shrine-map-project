@@ -127,8 +127,9 @@ const map = new maplibregl.Map({
   center: [FALLBACK.lon, FALLBACK.lat],
   zoom: 14,
   // モバイルのピンチズームは地図領域内で有効 (MapLibre 既定値だが明示)。
-  // ページ全体のズームは map.html の viewport (user-scalable=no) で
-  // 意図的に止めており、地図操作とは競合しない。
+  // ページ全体のブラウザズームも許可している (アクセシビリティ対応で
+  // map.html の viewport から user-scalable=no を撤去済み)。地図キャンバス上の
+  // ジェスチャーは MapLibre が touch-action で奪うため両者は競合しない。
   touchZoomRotate: true,
   doubleClickZoom: true,
 });
@@ -195,11 +196,11 @@ function buildPopupContent(shrine) {
     const result = await GoshuinStore.checkin(shrine, pos);
     if (result.ok) {
       // 保存確定後に押印演出 → 完了後に「取得済み」表示へ。
-      // オフライン保存 (ok:true, offline:true) も授与成功として演出する
+      // オフライン保留 (ok:true, offline:true) も授与成功として演出する
       await playStampSeal();
       toast(
         result.offline
-          ? `🎉 ${shrine.name} の御朱印を授かりました（オフラインのため端末に保存。オンライン復帰後に自動で同期されます）`
+          ? `🎉 ${shrine.name} の御朱印を授かりました（オフラインのため端末に保留保存。オンライン復帰後に位置を確認して確定されます）`
           : `🎉 ${shrine.name} の御朱印を授かりました！`
       );
     } else {
@@ -277,6 +278,57 @@ function distanceM(lat1, lon1, lat2, lon2) {
   return 2 * 6371000 * Math.asin(Math.sqrt(a));
 }
 
+/* ---------- モーダル共通のフォーカス管理 ----------
+ * role="dialog" の div モーダル2種 (フィードバック / 新規追加申請) で共用する。
+ *   - 開いたらモーダル本体 (tabindex=-1) へフォーカスを移し、SRに名前を読ませる
+ *   - Tab / Shift+Tab はモーダル内の操作可能要素だけを巡回 (フォーカストラップ)
+ *   - Escape で閉じる
+ *   - 閉じたら開いた元の要素へフォーカスを戻す
+ * モーダルは同時に1つしか開かないため、起動元の記憶は1変数でよい。 */
+const MODAL_FOCUSABLE_SEL =
+  'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+
+let modalOpener = null; // モーダルを開いた要素 (閉じたときのフォーカス復帰先)
+
+function setupModalA11y(overlay, onClose) {
+  const modal = overlay.querySelector(".fb-modal");
+  modal.tabIndex = -1; // openModal() のフォーカス移動先にする
+  overlay.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      onClose();
+      return;
+    }
+    if (e.key !== "Tab") return;
+    const focusables = [...modal.querySelectorAll(MODAL_FOCUSABLE_SEL)];
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    // モーダル本体にフォーカスがある状態 (開いた直後) の Shift+Tab も末尾へ回す
+    if (e.shiftKey && (document.activeElement === first || document.activeElement === modal)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
+}
+
+function openModal(overlay) {
+  modalOpener =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  overlay.classList.add("show");
+  overlay.querySelector(".fb-modal").focus();
+}
+
+function closeModal(overlay) {
+  overlay.classList.remove("show");
+  // 起動元がDOMから消えている場合 (地図ポップアップが閉じた等) は何もしない
+  if (modalOpener && document.contains(modalOpener)) modalOpener.focus();
+  modalOpener = null;
+}
+
 /* ---------- フィードバックフォーム ---------- */
 let fbEls = null; // モーダルのDOM参照(初回生成後キャッシュ)
 let fbShrine = null; // 対象の社寺
@@ -286,9 +338,9 @@ function buildFeedbackModal() {
   const overlay = document.createElement("div");
   overlay.className = "fb-overlay";
   overlay.innerHTML = `
-    <div class="fb-modal" role="dialog" aria-modal="true">
+    <div class="fb-modal" role="dialog" aria-modal="true" aria-labelledby="fb-modal-title">
       <div class="fb-head">
-        <span class="fb-title">情報を修正する</span>
+        <span class="fb-title" id="fb-modal-title">情報を修正する</span>
         <button class="fb-close" aria-label="閉じる">×</button>
       </div>
       <div class="fb-target"></div>
@@ -340,6 +392,7 @@ function buildFeedbackModal() {
     });
   });
   els.submit.addEventListener("click", submitFeedback);
+  setupModalA11y(overlay, closeFeedbackForm);
 
   return els;
 }
@@ -359,11 +412,11 @@ function openFeedbackForm(shrine) {
 
   const typeLabel = shrine.type === "shrine" ? "神社" : "寺院";
   fbEls.target.textContent = `対象: ${shrine.name}（${shrine.prefecture}・${typeLabel}）`;
-  fbEls.overlay.classList.add("show");
+  openModal(fbEls.overlay);
 }
 
 function closeFeedbackForm() {
-  if (fbEls) fbEls.overlay.classList.remove("show");
+  if (fbEls) closeModal(fbEls.overlay);
   fbShrine = null;
 }
 
@@ -438,9 +491,9 @@ function buildNewShrineModal() {
   const overlay = document.createElement("div");
   overlay.className = "fb-overlay";
   overlay.innerHTML = `
-    <div class="fb-modal" role="dialog" aria-modal="true">
+    <div class="fb-modal" role="dialog" aria-modal="true" aria-labelledby="ns-modal-title">
       <div class="fb-head">
-        <span class="fb-title">神社・寺院の追加申請</span>
+        <span class="fb-title" id="ns-modal-title">神社・寺院の追加申請</span>
         <button class="fb-close" aria-label="閉じる">×</button>
       </div>
       <div class="ns-pos"></div>
@@ -485,6 +538,7 @@ function buildNewShrineModal() {
     });
   });
   els.submit.addEventListener("click", submitNewShrine);
+  setupModalA11y(overlay, closeNewShrineForm);
 
   return els;
 }
@@ -506,7 +560,7 @@ async function openNewShrineForm() {
   nsPos = null;
   nsEls.submit.disabled = true;
   nsEls.pos.textContent = "📡 現在地を取得中…";
-  nsEls.overlay.classList.add("show");
+  openModal(nsEls.overlay);
 
   const pos = await getFreshPosition();
   // 取得待ちの間に閉じて開き直した場合は古い結果を捨てる
@@ -525,7 +579,7 @@ async function openNewShrineForm() {
 
 function closeNewShrineForm() {
   nsOpenSeq++;
-  if (nsEls) nsEls.overlay.classList.remove("show");
+  if (nsEls) closeModal(nsEls.overlay);
 }
 
 async function submitNewShrine() {
@@ -648,7 +702,9 @@ map.on("load", async () => {
     const pos = await getPosition(30000);
     start(pos, true);
   } catch {
-    start({ lat: FALLBACK.lat, lon: FALLBACK.lon, accuracy: null, ts: Date.now() }, false);
+    // fallback:true は実測でない位置の印。チェックインの保留保存には使わせない
+    // (goshuin-store.js が参照。東京駅座標のまま保留→検証で必ず破棄、を防ぐ)
+    start({ lat: FALLBACK.lat, lon: FALLBACK.lon, accuracy: null, ts: Date.now(), fallback: true }, false);
   } finally {
     setLocating(false);
   }

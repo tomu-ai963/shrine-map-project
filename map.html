@@ -2,12 +2,12 @@
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
-    <!-- user-scalable=no / maximum-scale=1.0 は意図的:
-         ページ全体のピンチズームを止め、地図操作との競合 (誤ってUIごと拡大) を防ぐ。
-         地図自体のピンチズームは MapLibre が地図領域内で処理する (app.js の touchZoomRotate)。 -->
+    <!-- ブラウザのピンチズームは禁止しない (アクセシビリティ: 拡大が必要な利用者のため)。
+         地図領域内のジェスチャーは MapLibre がキャンバスの touch-action で
+         処理するため、ページ全体のズームとは競合しない (app.js の touchZoomRotate)。 -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
     <title>⛩️ デジタル御朱印帳</title>
     <!-- PWA: GitHub Pages はサブパス配信 (/shrine-map-project/) のため相対パスで参照する -->
@@ -39,7 +39,8 @@
     </p>
     <!-- 未登録の神社・寺院の新規追加申請 (常設。配置は locate-btn と同じ左下系) -->
     <button id="add-shrine-btn" type="button">📍 ここに神社・寺院を追加申請</button>
-    <div id="toast" class="toast"></div>
+    <!-- role="status" (aria-live=polite 相当) でチェックイン成功等を支援技術にも通知する -->
+    <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
     <!-- 御朱印取得スタンプ演出 (成功時のみ app.js が .show を付与) -->
     <div id="stamp-overlay" aria-hidden="true">

@@ -6,14 +6,14 @@ CREATE TABLE IF NOT EXISTS goshuin_collection (
   device_id TEXT NOT NULL,
   user_id TEXT,                 -- 将来の会員機能用 (現状は常に NULL)
   shrine_id TEXT NOT NULL,
-  checked_in_at TEXT NOT NULL,  -- チェックイン日 (YYYY-MM-DD, クライアント申告)
+  checked_in_at TEXT NOT NULL,  -- チェックイン日 (YYYY-MM-DD, JST。過去30日以内の申告のみ受理し、それ以外は本日で補完)
   created_at TEXT NOT NULL,     -- サーバー受理日時 (UTC)
   UNIQUE (device_id, shrine_id) -- 同一デバイスの同一社寺は重複登録しない
 );
 CREATE INDEX IF NOT EXISTS idx_goshuin_device
   ON goshuin_collection (device_id);
 
--- POST /goshuin の device_id ベース簡易レート制限用。
+-- POST /checkin の device_id ベース簡易レート制限用。
 -- feedback_rate_limit と同じ方式 (キーと unix秒 を記録し直近ウィンドウ内の件数で判定)。
 CREATE TABLE IF NOT EXISTS goshuin_rate_limit (
   device_id TEXT NOT NULL,

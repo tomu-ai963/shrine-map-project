@@ -799,3 +799,36 @@ body.page-goshuin .goshuin-card {
     opacity: 0.95;
   }
 }
+
+/* ============================================================
+   アクセシビリティ (Issue #1)
+   ============================================================ */
+
+/* ---------- 動きの抑制 ----------
+   OSの「動きを減らす」設定時は、スタンプ演出の拡大・回転、モーダルの
+   スライドイン、スプラッシュ等のアニメーション・トランジションを
+   実質無効化する。0 ではなく 0.01ms にするのは、transitionend 等の
+   イベントに依存する処理 (splash.js 等) を発火させたまま保つため。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------- キーボードフォーカスリング ----------
+   :focus-visible はキーボード操作時のみ付与されるため、マウス・タッチ
+   操作の見た目は変えずに、Tab移動時だけ明瞭なリングを表示できる。
+   (テキスト入力欄は既存の :focus border-color 変化が指標として機能
+   しているため、そちらの outline:none 指定が引き続き優先される) */
+:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
+}
+/* openModal() のプログラムフォーカス受け皿 (tabindex=-1) にはリング不要 */
+.fb-modal:focus {
+  outline: none;
+}

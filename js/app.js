@@ -345,13 +345,13 @@ function buildFeedbackModal() {
       </div>
       <div class="fb-target"></div>
 
-      <label class="fb-label">神社・寺院名のズレ</label>
-      <input type="text" class="fb-name" placeholder="正しい名前があれば入力" />
+      <label class="fb-label" for="fb-name">神社・寺院名のズレ</label>
+      <input type="text" class="fb-name" id="fb-name" placeholder="正しい名前があれば入力" />
 
-      <label class="fb-label">位置のズレ</label>
-      <div class="fb-loc">
-        <button type="button" class="fb-loc-btn" data-sev="minor">少しズレてる</button>
-        <button type="button" class="fb-loc-btn" data-sev="major">大きくズレてる</button>
+      <label class="fb-label" id="fb-loc-label">位置のズレ</label>
+      <div class="fb-loc" role="group" aria-labelledby="fb-loc-label">
+        <button type="button" class="fb-loc-btn" data-sev="minor" aria-pressed="false">少しズレてる</button>
+        <button type="button" class="fb-loc-btn" data-sev="major" aria-pressed="false">大きくズレてる</button>
       </div>
 
       <label class="fb-check">
@@ -359,8 +359,8 @@ function buildFeedbackModal() {
         <span>この場所には存在しない</span>
       </label>
 
-      <label class="fb-label">自由コメント</label>
-      <textarea class="fb-comment" rows="3" placeholder="お気づきの点をご自由に"></textarea>
+      <label class="fb-label" for="fb-comment">自由コメント</label>
+      <textarea class="fb-comment" id="fb-comment" rows="3" placeholder="お気づきの点をご自由に"></textarea>
 
       <button class="btn btn-checkin fb-submit">送信する</button>
     </div>
@@ -386,9 +386,11 @@ function buildFeedbackModal() {
     b.addEventListener("click", () => {
       const sev = b.dataset.sev;
       fbLocSeverity = fbLocSeverity === sev ? "" : sev; // トグル
-      els.locBtns.forEach((x) =>
-        x.classList.toggle("active", x.dataset.sev === fbLocSeverity)
-      );
+      els.locBtns.forEach((x) => {
+        const on = x.dataset.sev === fbLocSeverity;
+        x.classList.toggle("active", on);
+        x.setAttribute("aria-pressed", String(on)); // 選択状態を支援技術にも公開
+      });
     });
   });
   els.submit.addEventListener("click", submitFeedback);
@@ -406,7 +408,10 @@ function openFeedbackForm(shrine) {
   fbEls.name.value = "";
   fbEls.comment.value = "";
   fbEls.notexist.checked = false;
-  fbEls.locBtns.forEach((x) => x.classList.remove("active"));
+  fbEls.locBtns.forEach((x) => {
+    x.classList.remove("active");
+    x.setAttribute("aria-pressed", "false");
+  });
   fbEls.submit.disabled = false;
   fbEls.submit.textContent = "送信する";
 
@@ -498,17 +503,17 @@ function buildNewShrineModal() {
       </div>
       <div class="ns-pos"></div>
 
-      <label class="fb-label">種別</label>
-      <div class="ns-type">
-        <button type="button" class="ns-type-btn" data-type="shrine">⛩️ 神社</button>
-        <button type="button" class="ns-type-btn" data-type="temple">🏯 寺院</button>
+      <label class="fb-label" id="ns-type-label">種別</label>
+      <div class="ns-type" role="group" aria-labelledby="ns-type-label">
+        <button type="button" class="ns-type-btn" data-type="shrine" aria-pressed="false">⛩️ 神社</button>
+        <button type="button" class="ns-type-btn" data-type="temple" aria-pressed="false">🏯 寺院</button>
       </div>
 
-      <label class="fb-label">名前（必須）</label>
-      <input type="text" class="ns-name" placeholder="例: ○○神社" />
+      <label class="fb-label" for="ns-name">名前（必須）</label>
+      <input type="text" class="ns-name" id="ns-name" placeholder="例: ○○神社" />
 
-      <label class="fb-label">自由コメント</label>
-      <textarea class="ns-comment" rows="3" placeholder="場所の目印などあればご自由に"></textarea>
+      <label class="fb-label" for="ns-comment">自由コメント</label>
+      <textarea class="ns-comment" id="ns-comment" rows="3" placeholder="場所の目印などあればご自由に"></textarea>
 
       <button class="btn btn-checkin ns-submit">この場所で申請する</button>
     </div>
@@ -532,9 +537,11 @@ function buildNewShrineModal() {
   els.typeBtns.forEach((b) => {
     b.addEventListener("click", () => {
       nsType = b.dataset.type;
-      els.typeBtns.forEach((x) =>
-        x.classList.toggle("active", x.dataset.type === nsType)
-      );
+      els.typeBtns.forEach((x) => {
+        const on = x.dataset.type === nsType;
+        x.classList.toggle("active", on);
+        x.setAttribute("aria-pressed", String(on)); // 選択状態を支援技術にも公開
+      });
     });
   });
   els.submit.addEventListener("click", submitNewShrine);
@@ -549,9 +556,11 @@ async function openNewShrineForm() {
 
   // リセット (種別は神社を既定に)
   nsType = "shrine";
-  nsEls.typeBtns.forEach((x) =>
-    x.classList.toggle("active", x.dataset.type === "shrine")
-  );
+  nsEls.typeBtns.forEach((x) => {
+    const on = x.dataset.type === "shrine";
+    x.classList.toggle("active", on);
+    x.setAttribute("aria-pressed", String(on));
+  });
   nsEls.name.value = "";
   nsEls.comment.value = "";
   nsEls.submit.textContent = "この場所で申請する";

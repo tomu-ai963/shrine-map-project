@@ -19,12 +19,5 @@ CREATE TABLE IF NOT EXISTS feedback (
   admin_note TEXT                       -- 運用者向けメモ (NULL許容)
 );
 
--- POST /feedback のIPベース簡易レート制限用。
--- ip と unix秒 を記録し、直近ウィンドウ内の件数で判定する。
--- 期限切れレコードは Worker 側でリクエスト毎に削除される。
-CREATE TABLE IF NOT EXISTS feedback_rate_limit (
-  ip TEXT NOT NULL,
-  ts INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_feedback_rate_limit_ip_ts
-  ON feedback_rate_limit (ip, ts);
+-- レート制限テーブル (旧 feedback_rate_limit) は原子的カウンタ方式の
+-- rate_limit_counter へ移行済み。migrate_rate_limit_counter.sql を参照。

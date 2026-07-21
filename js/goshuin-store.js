@@ -186,6 +186,16 @@ window.GoshuinStore = (() => {
     return !!pos && !pos.fallback;
   }
 
+  // 端末ローカルの暦日 (YYYY-MM-DD)。toISOString() は UTC のため、
+  // そのまま切り出すと日本では 0〜9時台の取得日が前日になってしまう
+  // (サーバー側の checked_in_at は JST 暦日で、そこと食い違っていた)。
+  function todayLocalDate() {
+    const d = new Date();
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 10);
+  }
+
   function saveRecordLocal(shrine, date) {
     const list = loadLocal();
     if (list.some((g) => g.id === shrine.id)) return;
@@ -194,7 +204,7 @@ window.GoshuinStore = (() => {
       name: shrine.name,
       prefecture: shrine.prefecture,
       type: shrine.type,
-      date: date || new Date().toISOString().slice(0, 10),
+      date: date || todayLocalDate(),
     });
     saveLocal(list);
   }
@@ -208,7 +218,7 @@ window.GoshuinStore = (() => {
       name: shrine.name,
       prefecture: shrine.prefecture,
       type: shrine.type,
-      date: new Date().toISOString().slice(0, 10),
+      date: todayLocalDate(),
       lat: pos.lat,
       lon: pos.lon,
       accuracy: pos.accuracy != null ? pos.accuracy : null,

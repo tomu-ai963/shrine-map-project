@@ -68,9 +68,17 @@ const MAX_SHRINE_NAME_LEN = 200;
 const MAX_ISSUE_TYPE_LEN = 100;
 const MAX_COMMENT_LEN = 1000;
 
-// IPベースの簡易レート制限 (D1 に直近リクエスト時刻を記録)
-const RATE_LIMIT_MAX = 5; // ウィンドウ内の最大リクエスト数
-const RATE_LIMIT_WINDOW_S = 60; // ウィンドウ幅[秒]
+/* ---------- レート制限設定 ----------
+ * キーは偽装できない CF-Connecting-IP (旧 /checkin の device_id キーは
+ * クライアントが自由に生成できたため廃止)。カウンタは rate_limit_counter
+ * テーブルへの UPSERT 1文で原子的に加算する (isRateLimited 参照)。 */
+const FEEDBACK_RATE_MAX = 5; // /feedback: ウィンドウ内の最大リクエスト数
+const FEEDBACK_RATE_WINDOW_S = 60; // ウィンドウ幅[秒]
+const CHECKIN_RATE_MAX = 10; // /checkin: ウィンドウ内の最大リクエスト数
+const CHECKIN_RATE_WINDOW_S = 60;
+// scheduled (Cron Trigger) が期限切れウィンドウを削除するときの保持秒数。
+// 最長ウィンドウ幅(60秒)より十分長ければ判定には影響しない。
+const RATE_RETENTION_S = 3600;
 
 /* ---------- 御朱印系エンドポイント共通のバリデーション設定 ---------- */
 // device_id は UUID v4 形式のみ許可 (crypto.randomUUID() で発行される)
@@ -80,8 +88,6 @@ const DEVICE_ID_RE =
 const CHECKED_IN_AT_RE = /^\d{4}-\d{2}-\d{2}$/;
 // checked_in_at で遡れる最大日数 (オフライン保留記録の復帰確定を想定)
 const CHECKIN_BACKDATE_MAX_DAYS = 30;
-const GOSHUIN_RATE_MAX = 10; // 同一 device_id のウィンドウ内最大リクエスト数
-const GOSHUIN_RATE_WINDOW_S = 60;
 
 /* ---------- /checkin のバリデーション設定 ---------- */
 const CHECKIN_RADIUS_M = 100; // チェックイン可能距離 (クライアントUIの閾値と同値)
@@ -201,35 +207,30 @@ async function handleHealth(env, cors) {
 }
 
 /**
- * IPベースの簡易レート制限。
- * feedback_rate_limit テーブルに (ip, unix秒) を記録し、
- * 直近ウィンドウ内のリクエスト数が上限を超えていれば true を返す。
+ * IPベースの原子的レート制限 (/feedback, /checkin 共通)。
+ * rate_limit_counter に (scope, ip, 固定ウィンドウ開始秒) をキーとした
+ * カウンタを UPSERT + RETURNING の1文で加算・取得する。
+ * 旧方式は SELECT→INSERT の2段階で、並列リクエストが同時に SELECT を
+ * 通過すると上限を突破できた。1文の原子的な加算ならその余地がない。
+ * 期限切れウィンドウの削除はリクエスト経路では行わず、Cron Trigger の
+ * scheduled ハンドラが定期的に一括削除する (テーブル肥大時の応答遅延防止)。
  */
-async function isRateLimited(env, ip) {
+async function isRateLimited(env, scope, ip, max, windowS) {
   const now = Math.floor(Date.now() / 1000);
-  const windowStart = now - RATE_LIMIT_WINDOW_S;
-
-  // 期限切れレコードの掃除(テーブルの肥大化防止)
-  await env.DB.prepare("DELETE FROM feedback_rate_limit WHERE ts < ?")
-    .bind(windowStart)
-    .run();
-
+  const windowStart = now - (now % windowS); // 固定ウィンドウ方式
   const row = await env.DB.prepare(
-    "SELECT COUNT(*) AS n FROM feedback_rate_limit WHERE ip = ? AND ts >= ?"
+    "INSERT INTO rate_limit_counter (scope, ip, window_start, n) VALUES (?, ?, ?, 1) " +
+      "ON CONFLICT (scope, ip, window_start) DO UPDATE SET n = n + 1 " +
+      "RETURNING n"
   )
-    .bind(ip, windowStart)
+    .bind(scope, ip, windowStart)
     .first();
-  if (row && row.n >= RATE_LIMIT_MAX) return true;
-
-  await env.DB.prepare("INSERT INTO feedback_rate_limit (ip, ts) VALUES (?, ?)")
-    .bind(ip, now)
-    .run();
-  return false;
+  return !!row && row.n > max;
 }
 
 async function handleFeedback(request, env, cors) {
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
-  if (await isRateLimited(env, ip)) {
+  if (await isRateLimited(env, "feedback", ip, FEEDBACK_RATE_MAX, FEEDBACK_RATE_WINDOW_S)) {
     return json(
       { error: "リクエストが多すぎます。しばらく待ってから再度お試しください" },
       429,
@@ -339,33 +340,6 @@ async function handleFeedback(request, env, cors) {
 }
 
 /**
- * device_id ベースの簡易レート制限 (/checkin 用)。
- * feedback の isRateLimited と同方式で goshuin_rate_limit テーブルを使う。
- */
-async function isGoshuinRateLimited(env, deviceId) {
-  const now = Math.floor(Date.now() / 1000);
-  const windowStart = now - GOSHUIN_RATE_WINDOW_S;
-
-  await env.DB.prepare("DELETE FROM goshuin_rate_limit WHERE ts < ?")
-    .bind(windowStart)
-    .run();
-
-  const row = await env.DB.prepare(
-    "SELECT COUNT(*) AS n FROM goshuin_rate_limit WHERE device_id = ? AND ts >= ?"
-  )
-    .bind(deviceId, windowStart)
-    .first();
-  if (row && row.n >= GOSHUIN_RATE_MAX) return true;
-
-  await env.DB.prepare(
-    "INSERT INTO goshuin_rate_limit (device_id, ts) VALUES (?, ?)"
-  )
-    .bind(deviceId, now)
-    .run();
-  return false;
-}
-
-/**
  * POST /checkin — サーバー側で距離を検証するチェックイン。
  * body: { device_id, shrine_id, lat, lon, accuracy?, checked_in_at? }
  * shrines テーブルの正式な座標との Haversine 距離が CHECKIN_RADIUS_M 以内の
@@ -387,7 +361,10 @@ async function handleCheckin(request, env, cors) {
     return json({ error: "device_id が不正です (UUID形式のみ)" }, 400, cors);
   }
 
-  if (await isGoshuinRateLimited(env, deviceId)) {
+  // レート制限はクライアントが自由に生成できる device_id ではなく
+  // 偽装できない接続元IPで数える
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  if (await isRateLimited(env, "checkin", ip, CHECKIN_RATE_MAX, CHECKIN_RATE_WINDOW_S)) {
     return json(
       { error: "リクエストが多すぎます。しばらく待ってから再度お試しください" },
       429,
@@ -619,5 +596,21 @@ export default {
       );
       return json({ error: "internal error" }, 500, cors);
     }
+  },
+
+  // Cron Trigger (wrangler.toml の [triggers].crons)。
+  // レート制限カウンタの期限切れウィンドウを定期削除する。
+  // 旧方式はこの掃除を書き込みリクエストのたびに実行しており、
+  // テーブル肥大時にユーザー応答を遅らせる要因だった。
+  async scheduled(controller, env) {
+    const cutoff = Math.floor(Date.now() / 1000) - RATE_RETENTION_S;
+    const result = await env.DB.prepare(
+      "DELETE FROM rate_limit_counter WHERE window_start < ?"
+    )
+      .bind(cutoff)
+      .run();
+    console.log(
+      `rate_limit_counter cleanup: ${result.meta ? result.meta.changes : 0} rows deleted`
+    );
   },
 };

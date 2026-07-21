@@ -2,6 +2,11 @@ name = "shrine-api"
 main = "src/index.js"
 compatibility_date = "2024-09-23"
 
+# レート制限カウンタ (rate_limit_counter) の期限切れウィンドウを
+# 6時間ごとに掃除する (src/index.js の scheduled ハンドラ)
+[triggers]
+crons = ["23 */6 * * *"]
+
 # D1 データベースのバインディング。
 # `wrangler d1 create shrines-db` 実行後に出力される database_id を下に貼り付ける。
 [[d1_databases]]

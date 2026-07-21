@@ -13,11 +13,6 @@ CREATE TABLE IF NOT EXISTS goshuin_collection (
 CREATE INDEX IF NOT EXISTS idx_goshuin_device
   ON goshuin_collection (device_id);
 
--- POST /checkin の device_id ベース簡易レート制限用。
--- feedback_rate_limit と同じ方式 (キーと unix秒 を記録し直近ウィンドウ内の件数で判定)。
-CREATE TABLE IF NOT EXISTS goshuin_rate_limit (
-  device_id TEXT NOT NULL,
-  ts INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_goshuin_rate_limit_device_ts
-  ON goshuin_rate_limit (device_id, ts);
+-- レート制限テーブル (旧 goshuin_rate_limit, device_id キー) は
+-- IPキーの原子的カウンタ方式 rate_limit_counter へ移行済み。
+-- migrate_rate_limit_counter.sql を参照。
